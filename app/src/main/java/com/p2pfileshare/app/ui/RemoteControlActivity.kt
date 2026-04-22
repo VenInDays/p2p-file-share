@@ -174,7 +174,6 @@ class RemoteControlActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         if (bitmap != null) {
                             // Recycle old bitmap to free memory
-                            val oldDrawable = ivRemoteScreen.drawable
                             ivRemoteScreen.setImageBitmap(bitmap)
 
                             consecutiveErrors = 0
@@ -193,6 +192,7 @@ class RemoteControlActivity : AppCompatActivity() {
                         } else {
                             consecutiveErrors++
                         }
+                        Unit
                     }
                 } catch (e: Exception) {
                     consecutiveErrors++
@@ -201,8 +201,8 @@ class RemoteControlActivity : AppCompatActivity() {
                             tvStatus.text = "Mất kết nối..."
                         } else if (consecutiveErrors > MAX_CONSECUTIVE_ERRORS) {
                             tvStatus.text = "Mất kết nối. Thử lại..."
-                            // Brief pause before retrying
                         }
+                        Unit
                     }
                 }
 
