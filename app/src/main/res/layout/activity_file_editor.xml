@@ -1,31 +1,127 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FAFAFA">
+    android:background="#1E1E1E">
 
-    <ScrollView
+    <!-- Custom Toolbar -->
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="wrap_content"
+        app:elevation="4dp">
 
-        <EditText
-            android:id="@+id/etFileContent"
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/editorToolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="top|start"
-            android:inputType="textMultiLine"
-            android:padding="16dp"
-            android:textSize="14sp"
-            android:background="@null"
-            android:fontFamily="monospace"
-            android:scrollbars="vertical"
-            android:scrollbarStyle="insideOverlay"
-            android:lineSpacingExtra="4dp"
-            android:textColor="#212121"
-            android:minLines="30" />
+            android:layout_height="?attr/actionBarSize"
+            android:background="#2D2D2D"
+            app:titleTextColor="#FFFFFF"
+            app:subtitleTextColor="#B0BEC5"
+            app:navigationIcon="?attr/homeAsUpIndicator" />
 
-    </ScrollView>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- File info bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#252525"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tvEditorFileName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="file.txt"
+            android:textSize="12sp"
+            android:textColor="#80CBC4"
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:ellipsize="middle" />
+
+        <TextView
+            android:id="@+id/tvEditorStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sửa đổi"
+            android:textSize="11sp"
+            android:textColor="#FF8A65" />
+
+    </LinearLayout>
+
+    <!-- Thin progress bar -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:indeterminate="true"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:visibility="gone"
+        android:progressTint="#4FC3F7"
+        android:progressBackgroundTint="#1E1E1E" />
+
+    <!-- Editor content - EditText with own scrolling, NO ScrollView wrapper -->
+    <EditText
+        android:id="@+id/etFileContent"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="top|start"
+        android:inputType="textMultiLine|textNoSuggestions"
+        android:padding="16dp"
+        android:textSize="13sp"
+        android:background="@null"
+        android:fontFamily="monospace"
+        android:scrollbars="vertical"
+        android:scrollbarStyle="insideOverlay"
+        android:scrollbarThumbVertical="@drawable/scrollbar_thumb"
+        android:lineSpacingExtra="3dp"
+        android:textColor="#D4D4D4"
+        android:textCursorDrawable="@null"
+        android:hint="Nội dung file..."
+        android:textColorHint="#555555"
+        android:importantForAutofill="no" />
+
+    <!-- Bottom bar with Save button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#2D2D2D"
+        android:padding="8dp"
+        android:gravity="end|center_vertical">
+
+        <TextView
+            android:id="@+id/tvCharCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="0 ký tự"
+            android:textSize="11sp"
+            android:textColor="#757575"
+            android:layout_marginStart="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSave"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="LƯU"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            app:backgroundTint="#1565C0"
+            app:cornerRadius="8dp"
+            android:minWidth="80dp" />
+
+    </LinearLayout>
 
 </LinearLayout>

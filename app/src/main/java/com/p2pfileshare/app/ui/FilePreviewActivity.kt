@@ -228,11 +228,8 @@ class FilePreviewActivity : AppCompatActivity() {
                 true
             }
             R.id.action_edit_preview -> {
-                if (isTextFile(fileName)) {
-                    loadTextContent()
-                } else {
-                    Toast.makeText(this, "Chỉ có thể chỉnh sửa file văn bản", Toast.LENGTH_SHORT).show()
-                }
+                // Allow editing ALL file types
+                loadTextContent()
                 true
             }
             android.R.id.home -> {

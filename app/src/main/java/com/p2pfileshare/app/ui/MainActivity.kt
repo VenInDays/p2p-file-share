@@ -309,13 +309,12 @@ class MainActivity : AppCompatActivity() {
             // Enter directory
             pathHistory.add(currentPath)
             browsePath(file.path)
+        } else if (FilePreviewActivity.isImageFile(file.name) || FilePreviewActivity.isVideoFile(file.name)) {
+            // Preview image/video directly
+            previewFile(file)
         } else {
-            // Preview file (image/video/text) or show options for unsupported types
-            if (FilePreviewActivity.isPreviewable(file.name)) {
-                previewFile(file)
-            } else {
-                showFileOptionsModal(file)
-            }
+            // All other files (text, unknown extension, no extension) → open editor
+            editFile(file)
         }
     }
 
@@ -369,16 +368,14 @@ class MainActivity : AppCompatActivity() {
             options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
             options.add(FileOption(R.drawable.ic_delete, "Xóa", android.R.color.holo_red_dark) { showDeleteConfirmDialog(file) })
         } else {
-            // Preview option for previewable files
-            if (FilePreviewActivity.isPreviewable(file.name)) {
+            // Preview option for image/video files
+            if (FilePreviewActivity.isImageFile(file.name) || FilePreviewActivity.isVideoFile(file.name)) {
                 options.add(FileOption(R.drawable.ic_preview, "Xem", R.color.colorPrimary) { previewFile(file) })
             }
             // Download
             options.add(FileOption(R.drawable.ic_download, "Tải xuống", R.color.colorPrimary) { downloadFile(file) })
-            // Edit for text files
-            if (FilePreviewActivity.isTextFile(file.name)) {
-                options.add(FileOption(R.drawable.ic_edit, "Sửa", R.color.colorAccent) { editFile(file) })
-            }
+            // Edit ALL files (text, unknown extensions, no extension)
+            options.add(FileOption(R.drawable.ic_edit, "Sửa", R.color.colorAccent) { editFile(file) })
             // Rename
             options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
             // Delete
