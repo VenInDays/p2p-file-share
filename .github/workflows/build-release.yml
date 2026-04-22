@@ -124,38 +124,39 @@ jobs:
         git tag -d "$TAG" || true
         git push origin ":refs/tags/$TAG" || true
 
-        # Create release using gh CLI (most reliable method)
+        # Write release notes to file to avoid shell quoting issues
+        cat > /tmp/notes.md << 'NOTES_EOF'
+        ## P2P File Share
+
+        - Tu dong ket noi cung WiFi
+        - Truy cap file: Download/Edit/Delete/Upload/Create
+        - Lock This Phone - Chong truy cap tu thiet bi khac
+        - Tu khoi dong khi bat may
+
+        ### Ho tro Android 8.0+ (API 26)
+
+        ### Cai dat
+        1. Tai APK ve 2 may
+        2. Cai dat APK (cho phep cai tu nguon khong xac dinh)
+        3. Mo app, cap TAT CA quyen (rat quan trong!)
+        4. Ket noi cung WiFi - Tu tim thay nhau
+        5. Neu khong tu tim thay, vao Settings lay IP, dung Ket noi thu cong
+        6. Cham vao thiet bi de duyet file
+
+        ### Tinh nang
+        - Tu dong phat hien thiet bi cung WiFi (NSD/mDNS)
+        - Hien thi IP may nay trong Settings
+        - Duyet file/thu muc tren may khac
+        - Tai file ve may minh / Upload file len may khac
+        - Tao thu muc/file moi, doi ten, xoa
+        - Chinh sua file van ban
+        - Khoa may nay - Chan nguoi khac truy cap
+        - Tu chay nen, tu khoi dong khi bat may
+
+        APK signed with v1 + v2 + v3
+        NOTES_EOF
+
         gh release create "$TAG" \
           P2PFileShare-v1.3.0.apk \
           --title "P2P File Share $TAG" \
-          --notes "## P2P File Share
-
-        **Tự động kết nối cùng WiFi**
-        **Truy cập file: Download/Edit/Delete/Upload/Create**
-        **Lock This Phone - Chống truy cập từ thiết bị khác**
-        **Tự khởi động khi bật máy**
-
-        ### Hỗ trợ Android 8.0 (API 26) trở lên
-
-        ### Cài đặt
-        1. Tải APK về 2 máy
-        2. Cài đặt APK (cho phép cài từ nguồn không xác định)
-        3. Mở app, cấp TẤT CẢ quyền (rất quan trọng!)
-        4. Kết nối cùng WiFi -> Tự tìm thấy nhau
-        5. Nếu không tự tìm thấy, vào Settings lấy IP, dùng Kết nối thủ công
-        6. Chạm vào thiết bị để duyệt file
-
-        ### Tính năng
-        - Tự động phát hiện thiết bị cùng WiFi (NSD/mDNS)
-        - Hiển thị IP máy này trong Settings (kết nối thủ công)
-        - Duyệt file/thư mục trên máy khác
-        - Tải file về máy mình
-        - Upload file lên máy khác
-        - Tạo thư mục/file mới
-        - Đổi tên file
-        - Xóa file/thư mục
-        - Chỉnh sửa file văn bản
-        - Khóa máy này - Chặn người khác truy cập
-        - Tự chạy nền, tự khởi động khi bật máy
-
-        **APK signed with v1 + v2 + v3**
+          --notes-file /tmp/notes.md
