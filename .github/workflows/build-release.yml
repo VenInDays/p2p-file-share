@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.1.0.apk"
+        FINAL_APK="P2PFileShare-v1.2.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.1.0.apk
+        path: P2PFileShare-v1.2.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.1.0-build${{ github.run_number }}"
+        TAG="v1.2.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,22 +126,22 @@ jobs:
 
         # Create release using gh CLI (most reliable method)
         gh release create "$TAG" \
-          P2PFileShare-v1.1.0.apk \
+          P2PFileShare-v1.2.0.apk \
           --title "P2P File Share $TAG" \
           --notes "## P2P File Share
 
-        🔗 **Tự động kết nối cùng WiFi**
-        📁 **Truy cập file: Download/Edit/Delete/Upload/Create**
-        🔒 **Lock This Phone - Chống truy cập từ thiết bị khác**
-        🔄 **Tự khởi động khi bật máy**
+        **Tự động kết nối cùng WiFi**
+        **Truy cập file: Download/Edit/Delete/Upload/Create**
+        **Lock This Phone - Chống truy cập từ thiết bị khác**
+        **Tự khởi động khi bật máy**
 
         ### Hỗ trợ Android 8.0 (API 26) trở lên
 
         ### Cài đặt
         1. Tải APK về 2 máy
         2. Cài đặt APK (cho phép cài từ nguồn không xác định)
-        3. Mở app, cấp tất cả quyền (quan trọng!)
-        4. Kết nối cùng WiFi → Tự tìm thấy nhau
+        3. Mở app, cấp TẤT CẢ quyền (rất quan trọng!)
+        4. Kết nối cùng WiFi -> Tự tìm thấy nhau
         5. Chạm vào thiết bị để duyệt file
 
         ### Tính năng

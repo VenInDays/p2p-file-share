@@ -8,18 +8,18 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
         try {
-            // Pre-warm storage path
+            instance = this
+            // Pre-warm storage path - safe call
             val root = getStorageRoot()
             Log.d("App", "Storage root: $root")
         } catch (e: Exception) {
-            Log.e("App", "Error initializing storage path", e)
+            Log.e("App", "Error initializing app", e)
         }
     }
 
     companion object {
-        lateinit var instance: App
+        var instance: App? = null
             private set
 
         const val SERVICE_NAME_PREFIX = "P2PFileShare"
@@ -29,7 +29,12 @@ class App : Application() {
         const val NOTIFICATION_ID = 1001
 
         fun getStorageRoot(): String {
-            return Environment.getExternalStorageDirectory().absolutePath
+            return try {
+                Environment.getExternalStorageDirectory().absolutePath
+            } catch (e: Exception) {
+                Log.e("App", "Failed to get storage root", e)
+                "/sdcard"
+            }
         }
     }
 }

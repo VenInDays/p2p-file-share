@@ -2,7 +2,6 @@ package com.p2pfileshare.app.ui
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -19,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -61,31 +61,41 @@ class MainActivity : AppCompatActivity() {
     private var isBrowsingFiles = false
 
     private val UPLOAD_REQUEST_CODE = 1001
+    private val PERMISSION_REQUEST_CODE = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        try {
+            super.onCreate(savedInstanceState)
+            setContentView(R.layout.activity_main)
 
-        prefs = PreferencesManager(this)
-        apiClient = ApiClient()
+            prefs = PreferencesManager(this)
+            apiClient = ApiClient()
 
-        initViews()
-        setupRecyclerView()
-        setupListeners()
-        checkPermissions()
+            initViews()
+            setupRecyclerView()
+            setupListeners()
+            checkAndRequestPermissions()
+        } catch (e: Exception) {
+            LogHelper.e("MainActivity", "onCreate failed", e)
+            Toast.makeText(this, "Lỗi khởi tạo: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        P2PService.setPeerCallbacks(
-            onDiscovered = { peer -> runOnUiThread { peerAdapter.addPeer(peer) } },
-            onLost = { name -> runOnUiThread { peerAdapter.removePeer(name) } }
-        )
+        try {
+            P2PService.setPeerCallbacks(
+                onDiscovered = { peer -> runOnUiThread { peerAdapter.addPeer(peer) } },
+                onLost = { name -> runOnUiThread { peerAdapter.removePeer(name) } }
+            )
 
-        // Update with existing peers
-        val existingPeers = P2PService.getDiscoveredPeers()
-        if (existingPeers.isNotEmpty()) {
-            peerAdapter.setPeers(existingPeers)
+            // Update with existing peers
+            val existingPeers = P2PService.getDiscoveredPeers()
+            if (existingPeers.isNotEmpty()) {
+                peerAdapter.setPeers(existingPeers)
+            }
+        } catch (e: Exception) {
+            LogHelper.e("MainActivity", "onResume failed", e)
         }
     }
 
@@ -112,20 +122,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() {
-        if (isBrowsingFiles && pathHistory.isNotEmpty()) {
-            pathHistory.removeAt(pathHistory.size - 1)
-            if (pathHistory.isEmpty()) {
-                showPeerList()
-            } else {
-                currentPath = pathHistory.last()
-                browsePath(currentPath)
-            }
-        } else {
-            super.onBackPressed()
-        }
-    }
-
     @Deprecated("Use onActivityResult callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
@@ -134,6 +130,19 @@ class MainActivity : AppCompatActivity() {
             val peer = currentPeer ?: return
             val uri = data.data ?: return
             uploadUriToPeer(peer, uri)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            // Start service regardless of permission result
+            // The service will handle its own errors gracefully
+            startP2PService()
         }
     }
 
@@ -148,7 +157,7 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(findViewById(R.id.toolbar))
         supportActionBar?.title = "P2P File Share"
 
-        tvStatus.text = "Đang tìm thiết bị..."
+        tvStatus.text = "Đang kiểm tra quyền..."
     }
 
     private fun setupRecyclerView() {
@@ -178,7 +187,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkPermissions() {
+    private fun checkAndRequestPermissions() {
         val permissions = mutableListOf<String>()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -189,29 +198,26 @@ class MainActivity : AppCompatActivity() {
                 permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            // Notification permission for Android 13+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11-12 (API 30-32): READ_EXTERNAL_STORAGE works with MANAGE_EXTERNAL_STORAGE
+            // Android 11-12 (API 30-32)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         } else {
-            // Android 8-10 (API 26-29): Need READ + WRITE external storage
+            // Android 8-10 (API 26-29)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                // Android 8-9 (API 26-28): WRITE_EXTERNAL_STORAGE still works
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-                    permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
-
-        // Notification permission for Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
 
         if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 100)
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+        } else {
+            // All permissions already granted, start service
+            startP2PService()
         }
 
         // Request all files access for Android 11+ (API 30+)
@@ -223,21 +229,27 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             } catch (e: Exception) {
-                // Fallback for devices that don't support this intent
-                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                startActivity(intent)
+                LogHelper.e("MainActivity", "Failed to request all files access", e)
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                } catch (e2: Exception) {
+                    LogHelper.e("MainActivity", "Failed to open all files access settings", e2)
+                }
             }
         }
-
-        // Start service
-        startP2PService()
     }
 
     private fun startP2PService() {
-        if (!P2PService.isRunning) {
-            P2PService.start(this)
+        try {
+            if (!P2PService.isRunning) {
+                P2PService.start(this)
+            }
+            tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
+        } catch (e: Exception) {
+            LogHelper.e("MainActivity", "Failed to start P2P service", e)
+            tvStatus.text = "Lỗi khởi động dịch vụ. Thử lại trong Settings."
         }
-        tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
     }
 
     private fun refreshPeers() {
@@ -300,7 +312,6 @@ class MainActivity : AppCompatActivity() {
             pathHistory.add(currentPath)
             browsePath(file.path)
         } else {
-            // Show options for file
             showFileOptionsDialog(file)
         }
     }
@@ -531,7 +542,6 @@ class MainActivity : AppCompatActivity() {
         showLoading(true)
         lifecycleScope.launch {
             try {
-                // Copy URI content to temp file
                 val inputStream = contentResolver.openInputStream(uri) ?: return@launch
                 val tempFile = File(cacheDir, "upload_temp_${System.currentTimeMillis()}")
                 inputStream.use { input ->
@@ -614,5 +624,32 @@ class MainActivity : AppCompatActivity() {
     private fun showLoading(show: Boolean) {
         progressBar.visibility = if (show) View.VISIBLE else View.GONE
         recyclerView.visibility = if (show) View.INVISIBLE else View.VISIBLE
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (isBrowsingFiles && pathHistory.isNotEmpty()) {
+            pathHistory.removeAt(pathHistory.size - 1)
+            if (pathHistory.isEmpty()) {
+                showPeerList()
+            } else {
+                currentPath = pathHistory.last()
+                browsePath(currentPath)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
+    }
+}
+
+/**
+ * Simple log helper to avoid crashes from logging
+ */
+private object LogHelper {
+    fun e(tag: String, msg: String, e: Exception) {
+        try {
+            android.util.Log.e(tag, msg, e)
+        } catch (_: Exception) {}
     }
 }
