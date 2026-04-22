@@ -45,40 +45,66 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Release APK
+    - name: Build Release APK (signed by Gradle)
       run: ./gradlew assembleRelease
 
-    - name: Sign APK with v1+v2+v3
+    - name: Verify and Re-sign APK with v1+v2+v3
       run: |
-        APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
-        SIGNED_APK="app/build/outputs/apk/release/app-release-signed.apk"
+        # Find the APK file (Gradle signs it, so it could be app-release.apk or app-release-unsigned.apk)
+        APK_DIR="app/build/outputs/apk/release"
+        echo "Contents of APK directory:"
+        ls -la ${APK_DIR}/
 
-        # Verify APK exists
-        ls -la app/build/outputs/apk/release/
+        # Find the APK file
+        UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
+        SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
+        FINAL_APK="P2PFileShare-v1.0.0.apk"
 
-        # Sign with apksigner (supports v1, v2, v3, v3.1)
-        # apksigner is available in Android SDK build-tools
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
         echo "Using build-tools: $BUILD_TOOLS"
 
-        ${BUILD_TOOLS}/apksigner sign \
-          --ks release.jks \
-          --ks-key-alias p2pfileshare \
-          --ks-pass pass:p2pfileshare123 \
-          --key-pass pass:p2pfileshare123 \
-          --v1-signing-enabled true \
-          --v2-signing-enabled true \
-          --v3-signing-enabled true \
-          --out ${SIGNED_APK} \
-          ${APK_PATH}
+        if [ -f "${SIGNED_BY_GRADLE}" ]; then
+          echo "APK was signed by Gradle: ${SIGNED_BY_GRADLE}"
+          # Verify Gradle's signature first
+          echo "Verifying Gradle signature..."
+          ${BUILD_TOOLS}/apksigner verify -v ${SIGNED_BY_GRADLE} || true
+          
+          # Re-sign with explicit v1+v2+v3 to ensure all schemes
+          echo "Re-signing with v1+v2+v3 to ensure all signing schemes..."
+          ${BUILD_TOOLS}/zipalign -f 4 ${SIGNED_BY_GRADLE} ${APK_DIR}/app-aligned.apk
+          ${BUILD_TOOLS}/apksigner sign \
+            --ks release.jks \
+            --ks-key-alias p2pfileshare \
+            --ks-pass pass:p2pfileshare123 \
+            --key-pass pass:p2pfileshare123 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out ${FINAL_APK} \
+            ${APK_DIR}/app-aligned.apk
+        elif [ -f "${UNSIGNED_APK}" ]; then
+          echo "APK is unsigned: ${UNSIGNED_APK}"
+          # Align first
+          ${BUILD_TOOLS}/zipalign -f 4 ${UNSIGNED_APK} ${APK_DIR}/app-aligned.apk
+          # Sign with v1+v2+v3
+          ${BUILD_TOOLS}/apksigner sign \
+            --ks release.jks \
+            --ks-key-alias p2pfileshare \
+            --ks-pass pass:p2pfileshare123 \
+            --key-pass pass:p2pfileshare123 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out ${FINAL_APK} \
+            ${APK_DIR}/app-aligned.apk
+        else
+          echo "ERROR: No APK found!"
+          exit 1
+        fi
 
-        echo "Verifying signature..."
-        ${BUILD_TOOLS}/apksigner verify -v ${SIGNED_APK}
-
-    - name: Rename APK
-      run: |
-        cp app/build/outputs/apk/release/app-release-signed.apk P2PFileShare-v1.0.0.apk
-        ls -la P2PFileShare-v1.0.0.apk
+        echo "Verifying final signature..."
+        ${BUILD_TOOLS}/apksigner verify -v ${FINAL_APK}
+        ls -la ${FINAL_APK}
 
     - name: Generate Release Tag
       id: tag
