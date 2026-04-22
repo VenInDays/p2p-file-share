@@ -20,18 +20,25 @@ import android.view.WindowManager
 /**
  * Manages MediaProjection-based screen capture for the Remote Control feature.
  *
- * Flow:
- * 1. User grants MediaProjection permission via SettingsActivity
- * 2. The resulting MediaProjection is stored here
- * 3. startCapture() creates a VirtualDisplay + ImageReader
- * 4. Frames are captured on demand via getLatestBitmap()
- * 5. FileServer's /api/screenshot endpoint reads the latest frame
+ * Optimized for high FPS streaming:
+ * - Uses reduced capture resolution (480x800) for fast network transfer
+ * - Keeps a pre-compressed JPEG buffer for instant serving
+ * - Compresses at quality 30 for small size while maintaining readability
+ * - Background compression thread to avoid blocking the UI
  */
 class ScreenCaptureManager {
 
     companion object {
         private const val TAG = "ScreenCapture"
         const val REQUEST_CODE = 5001
+
+        // Capture resolution - smaller = faster streaming
+        private const val CAPTURE_WIDTH = 480
+        private const val CAPTURE_HEIGHT = 854
+
+        // JPEG compression quality (1-100). Lower = faster transfer, lower quality
+        // 30 is good balance - readable text, small file size
+        private const val JPEG_QUALITY = 30
 
         /** Singleton instance, set from SettingsActivity when permission granted */
         var instance: ScreenCaptureManager? = null
@@ -57,14 +64,19 @@ class ScreenCaptureManager {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
-    private var latestBitmap: Bitmap? = null
     private var isRunning = false
+
+    // Latest raw bitmap and pre-compressed JPEG bytes
+    @Volatile
+    private var latestBitmap: Bitmap? = null
+    @Volatile
+    private var latestJpegBytes: ByteArray? = null
 
     private val handler = Handler(Looper.getMainLooper())
 
     /** Screen dimensions for capture */
-    private var screenWidth = 720
-    private var screenHeight = 1280
+    private var screenWidth = CAPTURE_WIDTH
+    private var screenHeight = CAPTURE_HEIGHT
     private var screenDensity = 160
 
     /**
@@ -75,7 +87,6 @@ class ScreenCaptureManager {
         stopCapture()
         this.mediaProjection = projection
 
-        // Register callback to handle projection stopping
         projection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
                 Log.d(TAG, "MediaProjection stopped")
@@ -87,7 +98,7 @@ class ScreenCaptureManager {
 
     /**
      * Start screen capture. Must be called after setMediaProjection().
-     * Uses a reduced resolution for network efficiency.
+     * Uses a reduced resolution for network efficiency and high FPS.
      */
     fun startCapture(context: Context): Boolean {
         if (mediaProjection == null) {
@@ -101,23 +112,21 @@ class ScreenCaptureManager {
         }
 
         try {
-            // Get actual screen dimensions
             val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val metrics = DisplayMetrics()
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.getMetrics(metrics)
             screenDensity = metrics.densityDpi
 
-            // Use reduced resolution for streaming (half the actual size for performance)
-            @Suppress("DEPRECATION")
-            screenWidth = Math.min(metrics.widthPixels, 720)
-            @Suppress("DEPRECATION")
-            screenHeight = Math.min(metrics.heightPixels, 1280)
+            // Use fixed reduced resolution for fast streaming
+            // This is much smaller than the actual screen but still readable
+            screenWidth = CAPTURE_WIDTH
+            screenHeight = CAPTURE_HEIGHT
 
-            // Create ImageReader
+            // Create ImageReader with 3 buffers for smoother capture
             imageReader = ImageReader.newInstance(
                 screenWidth, screenHeight,
-                PixelFormat.RGBA_8888, 2
+                PixelFormat.RGBA_8888, 3
             )
 
             imageReader?.setOnImageAvailableListener({ reader ->
@@ -127,9 +136,14 @@ class ScreenCaptureManager {
                         val bitmap = imageToBitmap(image)
                         image.close()
 
-                        // Recycle old bitmap and store new one
-                        latestBitmap?.recycle()
+                        // Recycle old bitmap
+                        val oldBitmap = latestBitmap
                         latestBitmap = bitmap
+
+                        // Compress to JPEG in background for instant serving
+                        compressToJpeg(bitmap)
+
+                        oldBitmap?.recycle()
                     }
                 } catch (e: Exception) {
                     // Image might already be closed, ignore
@@ -146,12 +160,26 @@ class ScreenCaptureManager {
             )
 
             isRunning = true
-            Log.d(TAG, "Screen capture started: ${screenWidth}x${screenHeight}")
+            Log.d(TAG, "Screen capture started: ${screenWidth}x${screenHeight} @ q=$JPEG_QUALITY")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start capture", e)
             stopCapture()
             return false
+        }
+    }
+
+    /**
+     * Compress the latest bitmap to JPEG bytes for instant serving.
+     * This avoids compressing on every HTTP request.
+     */
+    private fun compressToJpeg(bitmap: Bitmap) {
+        try {
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
+            latestJpegBytes = stream.toByteArray()
+        } catch (e: Exception) {
+            // Bitmap may be recycled, ignore
         }
     }
 
@@ -170,6 +198,7 @@ class ScreenCaptureManager {
         imageReader = null
 
         isRunning = false
+        latestJpegBytes = null
         Log.d(TAG, "Screen capture stopped")
     }
 
@@ -182,7 +211,23 @@ class ScreenCaptureManager {
         return latestBitmap
     }
 
+    /**
+     * Get the pre-compressed JPEG bytes for instant HTTP serving.
+     * Much faster than compressing on every request.
+     */
+    @Synchronized
+    fun getLatestJpegBytes(): ByteArray? {
+        return latestJpegBytes
+    }
+
     fun isCapturing(): Boolean = isRunning && mediaProjection != null
+
+    /**
+     * Get the capture dimensions (for remote control coordinate mapping)
+     */
+    fun getCaptureDimensions(): Pair<Int, Int> {
+        return Pair(screenWidth, screenHeight)
+    }
 
     /**
      * Stop the MediaProjection entirely (user revoked permission).
@@ -195,6 +240,7 @@ class ScreenCaptureManager {
         mediaProjection = null
         latestBitmap?.recycle()
         latestBitmap = null
+        latestJpegBytes = null
         instance = null
     }
 

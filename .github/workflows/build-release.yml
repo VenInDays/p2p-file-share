@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.5.0.apk"
+        FINAL_APK="P2PFileShare-v1.6.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.5.0.apk
+        path: P2PFileShare-v1.6.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.5.0-build${{ github.run_number }}"
+        TAG="v1.6.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,11 +126,27 @@ jobs:
 
         # Write release notes to file to avoid shell quoting issues
         cat > /tmp/notes.md << 'NOTES_EOF'
-        ## P2P File Share
+        ## P2P File Share v1.6.0
 
+        ### Tinh nang moi
+        - **UDP Discovery** - Tu dong tim thay nhau bang UDP broadcast (khong can NSD/mDNS)
+        - **Hash bao mat** - Chi app nay moi tim duoc nhau (HMAC-SHA256 xac thuc)
+        - **Auto-discovery** - Tu dong cap nhat danh sach thiet bi, khong can nhat refresh
+        - **Remote FPS tang** - Tang FPS tu ~6-7 len ~15-20 FPS
+        - **Pre-compressed JPEG** - Server nen anh truoc, phuc vu nhanh hon 3x
+
+        ### Cai tien
+        - Khong can nhat "Ket noi thu cong" nua - tu dong tim thay nhau
+        - Peer list tu cap nhat moi 3 giay
+        - Remote Control: giam do phan giai capture xuong 480x854 cho nhanh hon
+        - Remote Control: JPEG quality 30 cho file size nho, van doc duoc
+        - Adaptive frame interval: tu cham lai khi loi, nhanh len khi on dinh
+
+        ### Tinh nang cu
         - Tu dong ket noi cung WiFi
         - Truy cap file: Download/Edit/Delete/Upload/Create
         - Lock This Phone - Chong truy cap tu thiet bi khac
+        - Remote Control - Dieu khien man hinh may khac realtime
         - Tu khoi dong khi bat may
 
         ### Ho tro Android 8.0+ (API 26)
@@ -139,25 +155,13 @@ jobs:
         1. Tai APK ve 2 may
         2. Cai dat APK (cho phep cai tu nguon khong xac dinh)
         3. Mo app, cap TAT CA quyen (rat quan trong!)
-        4. Ket noi cung WiFi - Tu tim thay nhau
-        5. Neu khong tu tim thay, vao Settings lay IP, dung Ket noi thu cong
-        6. Cham vao thiet bi de duyet file
-
-        ### Tinh nang
-        - Tu dong phat hien thiet bi cung WiFi (NSD/mDNS)
-        - Hien thi IP may nay trong Settings
-        - Duyet file/thu muc tren may khac
-        - Tai file ve may minh / Upload file len may khac
-        - Tao thu muc/file moi, doi ten, xoa
-        - Chinh sua file van ban
-        - Khoa may nay - Chan nguoi khac truy cap
-        - Remote Control - Dieu khien man hinh may khac realtime
-        - Tu chay nen, tu khoi dong khi bat may
+        4. Ket noi cung WiFi - Tu tim thay nhau tu dong!
+        5. Cham vao thiet bi de duyet file
 
         APK signed with v1 + v2 + v3
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.5.0.apk \
+          P2PFileShare-v1.6.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md

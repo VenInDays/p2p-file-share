@@ -17,6 +17,7 @@ import android.os.Looper
 import android.util.Log
 import com.p2pfileshare.app.App
 import com.p2pfileshare.app.R
+import com.p2pfileshare.app.discovery.UdpDiscoveryBeacon
 import com.p2pfileshare.app.model.PeerDevice
 import com.p2pfileshare.app.server.FileServer
 import com.p2pfileshare.app.ui.MainActivity
@@ -33,18 +34,21 @@ class P2PService : Service() {
     private val prefs by lazy { PreferencesManager(this) }
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // WiFi multicast lock - REQUIRED for NSD discovery to work on many devices
+    // WiFi multicast lock - REQUIRED for NSD and UDP discovery to work
     private var multicastLock: WifiManager.MulticastLock? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // UDP Discovery Beacon (primary discovery method - more reliable than NSD)
+    private var udpBeacon: UdpDiscoveryBeacon? = null
 
     private var discoveredPeers = mutableListOf<PeerDevice>()
     private var onPeerDiscovered: ((PeerDevice) -> Unit)? = null
     private var onPeerLost: ((String) -> Unit)? = null
 
-    // Retry counter for discovery
+    // Retry counter for NSD discovery
     private var discoveryRetryCount = 0
     private val MAX_DISCOVERY_RETRIES = 5
-    private val DISCOVERY_RETRY_DELAY = 3000L // 3 seconds
+    private val DISCOVERY_RETRY_DELAY = 3000L
 
     companion object {
         var isRunning = false
@@ -113,8 +117,9 @@ class P2PService : Service() {
             scope.launch {
                 try {
                     startServer()
+                    startUdpDiscovery()
                     registerService()
-                    startDiscovery()
+                    startNsdDiscovery()
                 } catch (e: Exception) {
                     Log.e(tag, "Error in service startup", e)
                     updateNotification("Lỗi khởi động. Chạm để thử lại.")
@@ -137,8 +142,9 @@ class P2PService : Service() {
         try {
             super.onDestroy()
             scope.cancel()
+            stopUdpDiscovery()
             unregisterService()
-            stopDiscovery()
+            stopNsdDiscovery()
             stopServer()
             releaseMulticastLock()
             mainHandler.removeCallbacksAndMessages(null)
@@ -183,8 +189,6 @@ class P2PService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     // ============ WiFi Multicast Lock ============
-    // Required for NSD to work on many Android devices
-    // Without this, discovery silently fails on some WiFi networks
 
     private fun acquireMulticastLock() {
         try {
@@ -272,7 +276,41 @@ class P2PService : Service() {
         }
     }
 
-    // ============ NSD Registration ============
+    // ============ UDP Discovery (PRIMARY - more reliable than NSD) ============
+
+    private fun startUdpDiscovery() {
+        try {
+            if (udpBeacon != null) {
+                udpBeacon?.stop()
+            }
+
+            udpBeacon = UdpDiscoveryBeacon(prefs).apply {
+                onPeerDiscovered = { peer ->
+                    Log.d(tag, "UDP: Peer discovered: ${peer.name} @ ${peer.host}:${peer.port}")
+                    addPeerFromDiscovery(peer)
+                }
+                onPeerLost = { name ->
+                    Log.d(tag, "UDP: Peer lost: $name")
+                    removePeerFromDiscovery(name)
+                }
+            }
+            udpBeacon?.start()
+            Log.d(tag, "UDP Discovery Beacon started")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to start UDP discovery", e)
+        }
+    }
+
+    private fun stopUdpDiscovery() {
+        try {
+            udpBeacon?.stop()
+            udpBeacon = null
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to stop UDP discovery", e)
+        }
+    }
+
+    // ============ NSD Registration (keep for compatibility) ============
 
     private fun registerService() {
         try {
@@ -285,18 +323,17 @@ class P2PService : Service() {
 
             registrationListener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(info: NsdServiceInfo) {
-                    Log.d(tag, "Service registered: ${info.serviceName}")
+                    Log.d(tag, "NSD: Service registered: ${info.serviceName}")
                 }
                 override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                    Log.e(tag, "Registration failed: $errorCode")
-                    // Retry registration after delay
+                    Log.e(tag, "NSD: Registration failed: $errorCode")
                     mainHandler.postDelayed({ registerService() }, 5000)
                 }
                 override fun onServiceUnregistered(info: NsdServiceInfo) {
-                    Log.d(tag, "Service unregistered")
+                    Log.d(tag, "NSD: Service unregistered")
                 }
                 override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                    Log.e(tag, "Unregistration failed: $errorCode")
+                    Log.e(tag, "NSD: Unregistration failed: $errorCode")
                 }
             }
 
@@ -315,22 +352,20 @@ class P2PService : Service() {
         }
     }
 
-    // ============ NSD Discovery ============
+    // ============ NSD Discovery (SECONDARY - backup for UDP) ============
 
-    private fun startDiscovery() {
+    private fun startNsdDiscovery() {
         try {
-            stopDiscovery() // Clean up any existing discovery first
+            stopNsdDiscovery()
 
             discoveryListener = object : NsdManager.DiscoveryListener {
                 override fun onDiscoveryStarted(serviceType: String) {
-                    Log.d(tag, "Discovery started for: $serviceType")
+                    Log.d(tag, "NSD: Discovery started for: $serviceType")
                     discoveryRetryCount = 0
                 }
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                    Log.d(tag, "Service found: ${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
-                    // Check if this is our service - use contains() because some devices append (N)
-                    // Android may append a number like "P2PFileShare_MyPhone (2)" if name collision
+                    Log.d(tag, "NSD: Service found: ${serviceInfo.serviceName}")
                     val serviceName = serviceInfo.serviceName ?: ""
                     if (serviceName.startsWith(App.SERVICE_NAME_PREFIX)) {
                         resolveService(serviceInfo)
@@ -338,46 +373,33 @@ class P2PService : Service() {
                 }
 
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                    Log.d(tag, "Service lost: ${serviceInfo.serviceName}")
-                    try {
-                        val serviceName = serviceInfo.serviceName ?: return
-                        val deviceName = serviceName
-                            .removePrefix("${App.SERVICE_NAME_PREFIX}_")
-                            .replace(Regex(" \\(\\d+\\)$"), "") // Remove (2) suffix
-                        synchronized(discoveredPeers) {
-                            discoveredPeers.removeAll { it.name == deviceName || serviceName.startsWith("${App.SERVICE_NAME_PREFIX}_${it.name}") }
-                        }
-                        onPeerLost?.invoke(deviceName)
-                    } catch (e: Exception) {
-                        Log.e(tag, "Error handling service lost", e)
-                    }
+                    Log.d(tag, "NSD: Service lost: ${serviceInfo.serviceName}")
+                    // Don't remove peer here - UDP timeout handles it
                 }
 
                 override fun onDiscoveryStopped(serviceType: String) {
-                    Log.d(tag, "Discovery stopped")
+                    Log.d(tag, "NSD: Discovery stopped")
                 }
 
                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                    Log.e(tag, "Discovery start failed: $errorCode, retry=$discoveryRetryCount")
+                    Log.e(tag, "NSD: Discovery start failed: $errorCode, retry=$discoveryRetryCount")
                     if (discoveryRetryCount < MAX_DISCOVERY_RETRIES) {
                         discoveryRetryCount++
                         mainHandler.postDelayed({
-                            Log.d(tag, "Retrying discovery (attempt $discoveryRetryCount)")
-                            stopDiscovery()
-                            startDiscovery()
+                            stopNsdDiscovery()
+                            startNsdDiscovery()
                         }, DISCOVERY_RETRY_DELAY)
                     }
                 }
 
                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                    Log.e(tag, "Discovery stop failed: $errorCode")
+                    Log.e(tag, "NSD: Discovery stop failed: $errorCode")
                 }
             }
 
-            Log.d(tag, "Starting NSD discovery for type: ${App.SERVICE_TYPE}")
             nsdManager?.discoverServices(App.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
         } catch (e: Exception) {
-            Log.e(tag, "Failed to start discovery", e)
+            Log.e(tag, "Failed to start NSD discovery", e)
         }
     }
 
@@ -385,8 +407,7 @@ class P2PService : Service() {
         try {
             nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    Log.e(tag, "Resolve failed: $errorCode for ${serviceInfo.serviceName}")
-                    // Retry resolve once
+                    Log.e(tag, "NSD: Resolve failed: $errorCode for ${serviceInfo.serviceName}")
                     if (errorCode != NsdManager.FAILURE_ALREADY_ACTIVE) {
                         mainHandler.postDelayed({ resolveService(serviceInfo) }, 1000)
                     }
@@ -401,7 +422,7 @@ class P2PService : Service() {
 
                         val hostAddress = serviceInfo.host?.hostAddress
                         if (hostAddress == null) {
-                            Log.e(tag, "Resolved peer has null host address")
+                            Log.e(tag, "NSD: Resolved peer has null host address")
                             return
                         }
 
@@ -410,37 +431,51 @@ class P2PService : Service() {
                             host = hostAddress,
                             port = serviceInfo.port
                         )
-                        Log.d(tag, "Peer resolved: $peer")
 
-                        synchronized(discoveredPeers) {
-                            val existing = discoveredPeers.indexOfFirst { it.host == peer.host }
-                            if (existing >= 0) {
-                                discoveredPeers[existing] = peer
-                            } else {
-                                discoveredPeers.add(peer)
-                            }
-                        }
-
-                        onPeerDiscovered?.invoke(peer)
+                        addPeerFromDiscovery(peer)
                     } catch (e: Exception) {
-                        Log.e(tag, "Error processing resolved peer", e)
+                        Log.e(tag, "NSD: Error processing resolved peer", e)
                     }
                 }
             })
         } catch (e: Exception) {
-            Log.e(tag, "Error resolving service", e)
+            Log.e(tag, "NSD: Error resolving service", e)
         }
     }
 
-    private fun stopDiscovery() {
+    private fun stopNsdDiscovery() {
         try {
             discoveryListener?.let { listener ->
                 nsdManager?.stopServiceDiscovery(listener)
             }
             discoveryListener = null
         } catch (e: Exception) {
-            Log.e(tag, "Failed to stop discovery", e)
+            Log.e(tag, "Failed to stop NSD discovery", e)
         }
+    }
+
+    // ============ Unified Peer Management ============
+    // Merges peers from both UDP discovery and NSD
+
+    @Synchronized
+    private fun addPeerFromDiscovery(peer: PeerDevice) {
+        synchronized(discoveredPeers) {
+            val existing = discoveredPeers.indexOfFirst { it.host == peer.host }
+            if (existing >= 0) {
+                discoveredPeers[existing] = peer
+            } else {
+                discoveredPeers.add(peer)
+            }
+        }
+        onPeerDiscovered?.invoke(peer)
+    }
+
+    @Synchronized
+    private fun removePeerFromDiscovery(name: String) {
+        synchronized(discoveredPeers) {
+            discoveredPeers.removeAll { it.name == name }
+        }
+        onPeerLost?.invoke(name)
     }
 
     // ============ Notifications ============

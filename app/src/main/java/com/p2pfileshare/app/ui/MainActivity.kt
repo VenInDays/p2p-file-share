@@ -66,6 +66,17 @@ class MainActivity : AppCompatActivity() {
     private val UPLOAD_REQUEST_CODE = 1001
     private val PERMISSION_REQUEST_CODE = 100
 
+    // Auto-refresh peers every 3 seconds
+    private val peerRefreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val peerRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (!isBrowsingFiles) {
+                refreshPeers()
+            }
+            peerRefreshHandler.postDelayed(this, 3000)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
@@ -88,17 +99,37 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         try {
             P2PService.setPeerCallbacks(
-                onDiscovered = { peer -> runOnUiThread { peerAdapter.addPeer(peer) } },
-                onLost = { name -> runOnUiThread { peerAdapter.removePeer(name) } }
+                onDiscovered = { peer -> runOnUiThread { 
+                    peerAdapter.addPeer(peer)
+                    tvEmptyState.visibility = View.GONE
+                    tvStatus.text = "Đã tìm thấy thiết bị"
+                }},
+                onLost = { name -> runOnUiThread { 
+                    peerAdapter.removePeer(name)
+                    if (peerAdapter.itemCount == 0) {
+                        tvEmptyState.visibility = View.VISIBLE
+                        tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
+                    }
+                }}
             )
 
             val existingPeers = P2PService.getDiscoveredPeers()
             if (existingPeers.isNotEmpty()) {
                 peerAdapter.setPeers(existingPeers)
+                tvEmptyState.visibility = View.GONE
+                tvStatus.text = "Đã tìm thấy ${existingPeers.size} thiết bị"
             }
+
+            // Start auto-refresh
+            peerRefreshHandler.post(peerRefreshRunnable)
         } catch (e: Exception) {
             LogHelper.e("MainActivity", "onResume failed", e)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        peerRefreshHandler.removeCallbacks(peerRefreshRunnable)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -161,7 +192,7 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(findViewById(R.id.toolbar))
         supportActionBar?.title = "P2P File Share"
 
-        tvStatus.text = "Đang kiểm tra quyền..."
+        tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
     }
 
     private fun setupRecyclerView() {
@@ -254,10 +285,12 @@ class MainActivity : AppCompatActivity() {
         val peers = P2PService.getDiscoveredPeers()
         peerAdapter.setPeers(peers)
         if (peers.isEmpty()) {
-            tvEmptyState.text = "Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app."
+            tvEmptyState.text = "Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app.\nApp sẽ tự động tìm khi có thiết bị mới."
             tvEmptyState.visibility = View.VISIBLE
+            tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
         } else {
             tvEmptyState.visibility = View.GONE
+            tvStatus.text = "Đã tìm thấy ${peers.size} thiết bị"
         }
     }
 
@@ -306,18 +339,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ===== File click: tap to preview, long-press for options modal =====
-
     private fun onFileItemClick(file: FileItem) {
         if (file.isDirectory) {
-            // Enter directory
             pathHistory.add(currentPath)
             browsePath(file.path)
         } else if (FilePreviewActivity.isImageFile(file.name) || FilePreviewActivity.isVideoFile(file.name)) {
-            // Preview image/video directly
             previewFile(file)
         } else {
-            // All other files (text, unknown extension, no extension) → open editor
             editFile(file)
         }
     }
@@ -334,8 +362,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    // ===== Bottom Sheet Modal (replaces AlertDialog) =====
-
     private fun showFileOptionsModal(file: FileItem) {
         val bottomSheet = BottomSheetDialog(this)
         val view = LayoutInflater.from(this).inflate(R.layout.modal_file_options, null)
@@ -346,7 +372,6 @@ class MainActivity : AppCompatActivity() {
         val modalFileDetails: TextView = view.findViewById(R.id.modalFileDetails)
         val optionsContainer: LinearLayout = view.findViewById(R.id.optionsContainer)
 
-        // Set header info
         modalFileName.text = file.name
         val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(file.lastModified)
         modalFileDetails.text = if (file.isDirectory) "Thư mục · $dateStr" else "${formatFileSize(file.size)} · $dateStr"
@@ -357,7 +382,6 @@ class MainActivity : AppCompatActivity() {
             modalIcon.setImageResource(getIconResource(file))
         }
 
-        // Build options
         val options = buildFileOptions(file)
         populateModalOptions(optionsContainer, options, bottomSheet)
 
@@ -372,17 +396,12 @@ class MainActivity : AppCompatActivity() {
             options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
             options.add(FileOption(R.drawable.ic_delete, "Xóa", android.R.color.holo_red_dark) { showDeleteConfirmDialog(file) })
         } else {
-            // Preview option for image/video files
             if (FilePreviewActivity.isImageFile(file.name) || FilePreviewActivity.isVideoFile(file.name)) {
                 options.add(FileOption(R.drawable.ic_preview, "Xem", R.color.colorPrimary) { previewFile(file) })
             }
-            // Download
             options.add(FileOption(R.drawable.ic_download, "Tải xuống", R.color.colorPrimary) { downloadFile(file) })
-            // Edit ALL files (text, unknown extensions, no extension)
             options.add(FileOption(R.drawable.ic_edit, "Sửa", R.color.colorAccent) { editFile(file) })
-            // Rename
             options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
-            // Delete
             options.add(FileOption(R.drawable.ic_delete, "Xóa", android.R.color.holo_red_dark) { showDeleteConfirmDialog(file) })
         }
 
@@ -395,8 +414,6 @@ class MainActivity : AppCompatActivity() {
         val tintColor: Int,
         val action: () -> Unit
     )
-
-    // ===== Create Modal (BottomSheet) =====
 
     private fun showCreateModal() {
         val bottomSheet = BottomSheetDialog(this)
@@ -442,7 +459,6 @@ class MainActivity : AppCompatActivity() {
                 option.action()
             }
 
-            // Use weight for even distribution
             val params = LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -453,8 +469,6 @@ class MainActivity : AppCompatActivity() {
             container.addView(optionView)
         }
     }
-
-    // ===== File Operations =====
 
     private fun downloadFile(file: FileItem) {
         val peer = currentPeer ?: return
@@ -727,7 +741,7 @@ class MainActivity : AppCompatActivity() {
         recyclerView.adapter = peerAdapter
         fabAdd.hide()
         tvStatus.text = "Đang tìm thiết bị cùng WiFi..."
-        tvEmptyState.text = "Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app."
+        tvEmptyState.text = "Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app.\nApp sẽ tự động tìm khi có thiết bị mới."
         tvEmptyState.visibility = if (peerAdapter.itemCount == 0) View.VISIBLE else View.GONE
 
         refreshPeers()
@@ -763,7 +777,6 @@ class MainActivity : AppCompatActivity() {
                     browsePath(currentPath)
                 }
             } else {
-                // At root level of browsing, go back to peer list
                 showPeerList()
             }
         } else {
@@ -771,8 +784,6 @@ class MainActivity : AppCompatActivity() {
             super.onBackPressed()
         }
     }
-
-    // ===== Helper methods =====
 
     private fun getIconResource(file: FileItem): Int {
         val name = file.name.lowercase()

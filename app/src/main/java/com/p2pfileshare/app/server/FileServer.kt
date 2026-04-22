@@ -332,16 +332,26 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             return jsonError("This device is locked", Response.Status.FORBIDDEN)
         }
         val capture = com.p2pfileshare.app.remote.ScreenCaptureManager.instance
-        val bitmap = capture?.getLatestBitmap()
-        if (bitmap == null) {
+        if (capture == null || !capture.isCapturing()) {
             return jsonError("Screen capture not active. Enable in Settings > Remote Control.")
         }
         try {
-            val stream = java.io.ByteArrayOutputStream()
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, stream)
-            val bytes = stream.toByteArray()
-            val inputStream = java.io.ByteArrayInputStream(bytes)
-            return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, bytes.size.toLong())
+            // Use pre-compressed JPEG bytes for instant serving (much faster than compressing each time)
+            val jpegBytes = capture.getLatestJpegBytes()
+            if (jpegBytes != null && jpegBytes.isNotEmpty()) {
+                val inputStream = java.io.ByteArrayInputStream(jpegBytes)
+                return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, jpegBytes.size.toLong())
+            }
+            // Fallback: compress from bitmap if pre-compressed not available
+            val bitmap = capture.getLatestBitmap()
+            if (bitmap != null) {
+                val stream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 30, stream)
+                val bytes = stream.toByteArray()
+                val inputStream = java.io.ByteArrayInputStream(bytes)
+                return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, bytes.size.toLong())
+            }
+            return jsonError("No frame available yet")
         } catch (e: Exception) {
             return jsonError("Failed to capture screen: ${e.message}")
         }
