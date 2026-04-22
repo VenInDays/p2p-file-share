@@ -1,0 +1,128 @@
+name: Build and Release Signed APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Generate Keystore
+      run: |
+        echo "Generating keystore for signing..."
+        keytool -genkeypair \
+          -v \
+          -keystore app/release.jks \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -alias p2pfileshare \
+          -storepass p2pfileshare123 \
+          -keypass p2pfileshare123 \
+          -dname "CN=P2PFileShare, OU=Dev, O=P2PFileShare, L=Hanoi, ST=Hanoi, C=VN"
+
+    - name: Create keystore.properties
+      run: |
+        echo "keyAlias=p2pfileshare" > keystore.properties
+        echo "keyPassword=p2pfileshare123" >> keystore.properties
+        echo "storeFile=app/release.jks" >> keystore.properties
+        echo "storePassword=p2pfileshare123" >> keystore.properties
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Sign APK with v1+v2+v3
+      run: |
+        APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
+        SIGNED_APK="app/build/outputs/apk/release/app-release-signed.apk"
+
+        # Verify APK exists
+        ls -la app/build/outputs/apk/release/
+
+        # Sign with apksigner (supports v1, v2, v3, v3.1)
+        # apksigner is available in Android SDK build-tools
+        BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
+        echo "Using build-tools: $BUILD_TOOLS"
+
+        ${BUILD_TOOLS}/apksigner sign \
+          --ks app/release.jks \
+          --ks-key-alias p2pfileshare \
+          --ks-pass pass:p2pfileshare123 \
+          --key-pass pass:p2pfileshare123 \
+          --v1-signing-enabled true \
+          --v2-signing-enabled true \
+          --v3-signing-enabled true \
+          --out ${SIGNED_APK} \
+          ${APK_PATH}
+
+        echo "Verifying signature..."
+        ${BUILD_TOOLS}/apksigner verify -v ${SIGNED_APK}
+
+    - name: Rename APK
+      run: |
+        cp app/build/outputs/apk/release/app-release-signed.apk P2PFileShare-v1.0.0.apk
+        ls -la P2PFileShare-v1.0.0.apk
+
+    - name: Generate Release Tag
+      id: tag
+      run: |
+        TAG="v1.0.0-build${{ github.run_number }}"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Release tag: $TAG"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: "P2P File Share ${{ steps.tag.outputs.tag }}"
+        body: |
+          ## P2P File Share - Auto Build
+
+          🔗 **Tự động kết nối cùng WiFi**
+          📁 **Truy cập file: Download/Edit/Delete/Upload/Create**
+          🔒 **Lock This Phone - Chống truy cập từ thiết bị khác**
+          🔄 **Tự khởi động khi bật máy**
+
+          ### Cài đặt
+          1. Tải APK về 2 máy
+          2. Cài đặt APK
+          3. Mở app, cấp quyền
+          4. Kết nối cùng WiFi → Tự tìm thấy nhau
+          5. Chạm vào thiết bị để duyệt file
+
+          ### Tính năng
+          - Tự động phát hiện thiết bị cùng WiFi
+          - Duyệt file/thư mục trên máy khác
+          - Tải file về máy mình
+          - Upload file lên máy khác
+          - Tạo thư mục/file mới
+          - Đổi tên file
+          - Xóa file/thư mục
+          - Chỉnh sửa file văn bản
+          - "Khóa máy này" - Chặn người khác truy cập
+          - Tự chạy nền, tự khởi động khi bật máy
+
+          **APK signed with v1 + v2 + v3**
+        files: |
+          P2PFileShare-v1.0.0.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

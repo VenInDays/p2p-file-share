@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">P2P File Share</string>
+    <string name="settings">Cài đặt</string>
+    <string name="file_editor">Chỉnh sửa file</string>
+</resources>

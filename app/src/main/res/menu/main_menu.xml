@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_refresh_peers"
+        android:title="Làm mới"
+        android:icon="@android:drawable/ic_popup_sync"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_manual_connect"
+        android:title="Kết nối thủ công"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_settings"
+        android:title="Cài đặt"
+        app:showAsAction="never" />
+
+</menu>
