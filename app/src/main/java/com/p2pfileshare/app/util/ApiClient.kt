@@ -15,6 +15,8 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import java.net.URLEncoder
 
 class ApiClient {
@@ -297,5 +299,96 @@ class ApiClient {
         reader.close()
         conn.disconnect()
         return response.toString()
+    }
+
+    // ===== Remote Control API =====
+
+    data class ScreenInfo(
+        val width: Int = 720,
+        val height: Int = 1280,
+        val density: Int = 160,
+        val captureActive: Boolean = false,
+        val gestureActive: Boolean = false
+    )
+
+    suspend fun getScreenInfo(peer: PeerDevice): ScreenInfo? = withContext(Dispatchers.IO) {
+        try {
+            val json = httpGet("http://${peer.host}:${peer.port}/api/screen-info")
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                ScreenInfo(
+                    width = (dataMap["width"] as? Double)?.toInt() ?: 720,
+                    height = (dataMap["height"] as? Double)?.toInt() ?: 1280,
+                    density = (dataMap["density"] as? Double)?.toInt() ?: 160,
+                    captureActive = dataMap["captureActive"] as? Boolean ?: false,
+                    gestureActive = dataMap["gestureActive"] as? Boolean ?: false
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getScreenInfo failed", e)
+            null
+        }
+    }
+
+    suspend fun getScreenshot(peer: PeerDevice): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/screenshot")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 8000
+
+            val inputStream = conn.inputStream
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            conn.disconnect()
+            bitmap
+        } catch (e: Exception) {
+            Log.e(tag, "getScreenshot failed", e)
+            null
+        }
+    }
+
+    suspend fun sendTouch(peer: PeerDevice, x: Float, y: Float, action: String = "tap"): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/touch?x=$x&y=$y&action=${URLEncoder.encode(action, "UTF-8")}")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 5000
+
+            // Write empty body for POST
+            conn.outputStream.write(ByteArray(0))
+            conn.outputStream.flush()
+
+            val responseCode = conn.responseCode
+            conn.disconnect()
+            responseCode == 200
+        } catch (e: Exception) {
+            Log.e(tag, "sendTouch failed", e)
+            false
+        }
+    }
+
+    suspend fun sendSwipe(peer: PeerDevice, x: Float, y: Float, dx: Float, dy: Float): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/touch?x=$x&y=$y&action=swipe&dx=$dx&dy=$dy")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 5000
+
+            conn.outputStream.write(ByteArray(0))
+            conn.outputStream.flush()
+
+            val responseCode = conn.responseCode
+            conn.disconnect()
+            responseCode == 200
+        } catch (e: Exception) {
+            Log.e(tag, "sendSwipe failed", e)
+            false
+        }
     }
 }

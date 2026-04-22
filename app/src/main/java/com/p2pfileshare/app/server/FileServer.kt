@@ -39,12 +39,15 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 uri == "/api/list" -> handleList(params)
                 uri == "/api/download" -> handleDownload(params)
                 uri == "/api/upload" && method == Method.POST -> handleUpload(session)
-                uri == "/api/create-folder" && method == Method.POST -> handleCreateFolder(params)
-                uri == "/api/create-file" && method == Method.POST -> handleCreateFile(params)
+                uri == "/api/create-folder" -> handleCreateFolder(params)
+                uri == "/api/create-file" -> handleCreateFile(params)
                 uri == "/api/delete" && method == Method.DELETE -> handleDelete(params)
                 uri == "/api/rename" && method == Method.POST -> handleRename(params)
                 uri == "/api/edit" && method == Method.POST -> handleEdit(session)
                 uri == "/api/file-info" -> handleFileInfo(params)
+                uri == "/api/screenshot" -> handleScreenshot()
+                uri == "/api/touch" && method == Method.POST -> handleTouch(params)
+                uri == "/api/screen-info" -> handleScreenInfo()
                 else -> jsonError("Unknown endpoint: $uri", Response.Status.NOT_FOUND)
             }
         } catch (e: Exception) {
@@ -125,11 +128,12 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         val params = HashMap<String, String>()
         session.parseBody(files)
 
-        val targetPath = params["path"] ?: session.parms["path"] ?: App.getStorageRoot()
-        val targetDir = File(URLDecoder.decode(targetPath, "UTF-8"))
+        var targetPath = params["path"] ?: session.parms["path"] ?: "/"
+        targetPath = URLDecoder.decode(targetPath, "UTF-8")
+        val targetDir = if (targetPath == "/") File(App.getStorageRoot()) else File(targetPath)
 
         if (!targetDir.exists() || !targetDir.isDirectory) {
-            return jsonError("Target directory not found")
+            return jsonError("Target directory not found: $targetPath")
         }
 
         val uploadedFiles = mutableListOf<String>()
@@ -321,6 +325,72 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         java.util.zip.ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             zipRecursive(sourceDir, sourceDir.name, zos)
         }
+    }
+
+    private fun handleScreenshot(): Response {
+        if (prefs.isLocked) {
+            return jsonError("This device is locked", Response.Status.FORBIDDEN)
+        }
+        val capture = com.p2pfileshare.app.remote.ScreenCaptureManager.instance
+        val bitmap = capture?.getLatestBitmap()
+        if (bitmap == null) {
+            return jsonError("Screen capture not active. Enable in Settings > Remote Control.")
+        }
+        try {
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, stream)
+            val bytes = stream.toByteArray()
+            val inputStream = java.io.ByteArrayInputStream(bytes)
+            return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, bytes.size.toLong())
+        } catch (e: Exception) {
+            return jsonError("Failed to capture screen: ${e.message}")
+        }
+    }
+
+    private fun handleTouch(params: Map<String, String>): Response {
+        if (prefs.isLocked) {
+            return jsonError("This device is locked", Response.Status.FORBIDDEN)
+        }
+        val xStr = params["x"] ?: return jsonError("x is required")
+        val yStr = params["y"] ?: return jsonError("y is required")
+        val action = params["action"] ?: "tap"
+        val x = xStr.toFloatOrNull() ?: return jsonError("Invalid x")
+        val y = yStr.toFloatOrNull() ?: return jsonError("Invalid y")
+
+        val gestureService = com.p2pfileshare.app.remote.RemoteGestureService.instance
+        if (gestureService == null) {
+            return jsonError("Gesture service not active. Enable Accessibility in Settings.")
+        }
+
+        val success = when (action) {
+            "tap" -> gestureService.dispatchTap(x, y)
+            "long_press" -> gestureService.dispatchLongPress(x, y)
+            "swipe" -> {
+                val dx = params["dx"]?.toFloatOrNull() ?: 0f
+                val dy = params["dy"]?.toFloatOrNull() ?: 0f
+                gestureService.dispatchSwipe(x, y, x + dx, y + dy)
+            }
+            else -> false
+        }
+
+        return if (success) jsonSuccess("Gesture dispatched", action) 
+               else jsonError("Failed to dispatch gesture")
+    }
+
+    private fun handleScreenInfo(): Response {
+        if (prefs.isLocked) {
+            return jsonError("This device is locked", Response.Status.FORBIDDEN)
+        }
+        val context = App.instance ?: return jsonError("App not initialized")
+        val display = context.resources.displayMetrics
+        val data = mapOf(
+            "width" to display.widthPixels,
+            "height" to display.heightPixels,
+            "density" to display.densityDpi,
+            "captureActive" to (com.p2pfileshare.app.remote.ScreenCaptureManager.instance?.isCapturing() == true),
+            "gestureActive" to (com.p2pfileshare.app.remote.RemoteGestureService.instance != null)
+        )
+        return jsonSuccess("OK", data)
     }
 
     private fun zipRecursive(file: File, basePath: String, zos: java.util.zip.ZipOutputStream) {

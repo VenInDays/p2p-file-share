@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.3.0.apk"
+        FINAL_APK="P2PFileShare-v1.5.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.3.0.apk
+        path: P2PFileShare-v1.5.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.3.0-build${{ github.run_number }}"
+        TAG="v1.5.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -151,12 +151,13 @@ jobs:
         - Tao thu muc/file moi, doi ten, xoa
         - Chinh sua file van ban
         - Khoa may nay - Chan nguoi khac truy cap
+        - Remote Control - Dieu khien man hinh may khac realtime
         - Tu chay nen, tu khoi dong khi bat may
 
         APK signed with v1 + v2 + v3
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.3.0.apk \
+          P2PFileShare-v1.5.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md

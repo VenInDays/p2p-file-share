@@ -33,4 +33,8 @@ class PreferencesManager(context: Context) {
     var lastConnectedPort: Int
         get() = prefs.getInt("last_connected_port", 0)
         set(value) = prefs.edit().putInt("last_connected_port", value).apply()
+
+    var isRemoteControlEnabled: Boolean
+        get() = prefs.getBoolean("remote_control_enabled", false)
+        set(value) = prefs.edit().putBoolean("remote_control_enabled", value).apply()
 }

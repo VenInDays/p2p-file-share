@@ -3,6 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/action_remote_control"
+        android:title="Remote"
+        android:icon="@drawable/ic_remote"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/action_refresh_peers"
         android:title="Làm mới"
         android:icon="@android:drawable/ic_popup_sync"

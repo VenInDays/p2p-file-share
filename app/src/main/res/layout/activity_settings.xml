@@ -127,6 +127,164 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Remote Control -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:strokeColor="#4CAF50"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="#E8F5E9">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Remote Control"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#2E7D32" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Cho phép máy khác xem và điều khiển màn hình máy bạn qua cảm ứng"
+                            android:textSize="12sp"
+                            android:textColor="#757575"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="2dp" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchRemoteControl"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
+                <!-- Status indicators -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp">
+
+                    <TextView
+                        android:id="@+id/tvScreenCaptureStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Screen Capture: TẮT"
+                        android:textSize="12sp"
+                        android:textColor="#F44336"
+                        android:fontFamily="monospace" />
+
+                    <TextView
+                        android:id="@+id/tvGestureStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Accessibility Service: TẮT"
+                        android:textSize="12sp"
+                        android:textColor="#F44336"
+                        android:fontFamily="monospace" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Screen Capture Permission -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardScreenCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Screen Capture Permission"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#212121" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Chạm để cấp quyền ghi màn hình. Cần thiết để máy khác xem màn hình bạn."
+                    android:textSize="12sp"
+                    android:textColor="#9E9E9E"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="2dp" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Gesture Service (Accessibility) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardGestureService"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Accessibility Service (Điều khiển cảm ứng)"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#212121" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Chạm để mở cài đặt Accessibility. Tìm 'P2P File Share' và bật lên. Cần thiết để máy khác có thể chạm điều khiển máy bạn."
+                    android:textSize="12sp"
+                    android:textColor="#9E9E9E"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="2dp" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Auto Start -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -257,7 +415,7 @@
             android:id="@+id/tvVersion"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="P2P File Share v1.4.0"
+            android:text="P2P File Share v1.5.0"
             android:textSize="12sp"
             android:textColor="#9E9E9E"
             android:gravity="center"

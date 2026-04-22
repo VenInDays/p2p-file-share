@@ -28,4 +28,15 @@
         <item name="android:statusBarColor">#2D2D2D</item>
         <item name="android:windowBackground">#1E1E1E</item>
     </style>
+
+    <style name="Theme.P2PFileShare.Remote" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">#4CAF50</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+    </style>
 </resources>

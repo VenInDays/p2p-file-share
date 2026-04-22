@@ -3,4 +3,5 @@
     <string name="app_name">P2P File Share</string>
     <string name="settings">Cài đặt</string>
     <string name="file_editor">Chỉnh sửa file</string>
+    <string name="accessibility_service_description">P2P File Share Remote Control - Cho phép thiết bị khác điều khiển màn hình qua cảm ứng. Chỉ hoạt động khi bạn chủ động bật tính năng Remote Control trong Cài đặt.</string>
 </resources>

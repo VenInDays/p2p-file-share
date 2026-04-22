@@ -120,6 +120,10 @@ class MainActivity : AppCompatActivity() {
                 showManualConnectDialog()
                 true
             }
+            R.id.action_remote_control -> {
+                openRemoteControl()
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -727,6 +731,19 @@ class MainActivity : AppCompatActivity() {
         tvEmptyState.visibility = if (peerAdapter.itemCount == 0) View.VISIBLE else View.GONE
 
         refreshPeers()
+    }
+
+    private fun openRemoteControl() {
+        val peer = currentPeer
+        if (peer == null) {
+            Toast.makeText(this, "Hãy kết nối với thiết bị trước", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(this, RemoteControlActivity::class.java)
+        intent.putExtra("peer_host", peer.host)
+        intent.putExtra("peer_port", peer.port)
+        intent.putExtra("peer_name", peer.name)
+        startActivity(intent)
     }
 
     private fun showLoading(show: Boolean) {
