@@ -26,7 +26,7 @@ jobs:
         echo "Generating keystore for signing..."
         keytool -genkeypair \
           -v \
-          -keystore app/release.jks \
+          -keystore release.jks \
           -keyalg RSA \
           -keysize 2048 \
           -validity 10000 \
@@ -39,7 +39,7 @@ jobs:
       run: |
         echo "keyAlias=p2pfileshare" > keystore.properties
         echo "keyPassword=p2pfileshare123" >> keystore.properties
-        echo "storeFile=app/release.jks" >> keystore.properties
+        echo "storeFile=release.jks" >> keystore.properties
         echo "storePassword=p2pfileshare123" >> keystore.properties
 
     - name: Grant execute permission for gradlew
@@ -62,7 +62,7 @@ jobs:
         echo "Using build-tools: $BUILD_TOOLS"
 
         ${BUILD_TOOLS}/apksigner sign \
-          --ks app/release.jks \
+          --ks release.jks \
           --ks-key-alias p2pfileshare \
           --ks-pass pass:p2pfileshare123 \
           --key-pass pass:p2pfileshare123 \
