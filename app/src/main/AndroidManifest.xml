@@ -68,6 +68,12 @@
             android:label="@string/file_editor"
             android:parentActivityName=".ui.MainActivity" />
 
+        <activity
+            android:name=".ui.FilePreviewActivity"
+            android:label="Xem trước"
+            android:parentActivityName=".ui.MainActivity"
+            android:theme="@style/Theme.P2PFileShare.Preview" />
+
         <service
             android:name=".service.P2PService"
             android:enabled="true"

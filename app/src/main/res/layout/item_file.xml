@@ -1,51 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:padding="12dp"
-    android:gravity="center_vertical"
-    android:background="?attr/selectableItemBackground">
-
-    <ImageView
-        android:id="@+id/ivIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:src="@drawable/ic_file"
-        android:contentDescription="File icon" />
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="#FAFAFA">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="12dp"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:minHeight="64dp">
 
-        <TextView
-            android:id="@+id/tvName"
-            android:layout_width="match_parent"
+        <!-- File icon or thumbnail -->
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp">
+
+            <ImageView
+                android:id="@+id/ivIcon"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_file"
+                android:scaleType="fitCenter"
+                android:contentDescription="File icon" />
+
+            <ImageView
+                android:id="@+id/ivThumbnail"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                android:contentDescription="Thumbnail" />
+
+            <!-- Play overlay for video -->
+            <ImageView
+                android:id="@+id/playOverlay"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_play_circle"
+                android:visibility="gone"
+                android:contentDescription="Play" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:textSize="16sp"
-            android:textColor="@android:color/black"
-            android:maxLines="1"
-            android:ellipsize="middle" />
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="15sp"
+                android:textColor="#212121"
+                android:maxLines="2"
+                android:ellipsize="middle"
+                android:lineSpacingExtra="2dp" />
+
+            <TextView
+                android:id="@+id/tvDetails"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#9E9E9E"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
 
         <TextView
-            android:id="@+id/tvDetails"
-            android:layout_width="match_parent"
+            android:id="@+id/tvSize"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="#9E9E9E"
+            android:layout_marginStart="8dp" />
 
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvSize"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textSize="12sp"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginStart="8dp" />
-
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

@@ -1,8 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#1565C0</color>
-    <color name="colorPrimaryDark">#0D47A1</color>
+    <color name="colorPrimary">#2196F3</color>
+    <color name="colorPrimaryDark">#1565C0</color>
     <color name="colorAccent">#FF6D00</color>
+    <color name="colorSurface">#FFFFFF</color>
+    <color name="colorBackground">#F5F5F5</color>
+    <color name="colorTextPrimary">#212121</color>
+    <color name="colorTextSecondary">#757575</color>
+    <color name="colorDivider">#E0E0E0</color>
+    <color name="colorFolderIcon">#FFB300</color>
+    <color name="colorImageIcon">#4CAF50</color>
+    <color name="colorVideoIcon">#F44336</color>
+    <color name="colorAudioIcon">#9C27B0</color>
+    <color name="colorTextFileIcon">#2196F3</color>
+    <color name="colorArchiveIcon">#795548</color>
+    <color name="colorPdfIcon">#F44336</color>
+    <color name="colorApkIcon">#4CAF50</color>
+    <color name="colorFileIcon">#9E9E9E</color>
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
+    <color name="bottom_sheet_bg">#FFFFFF</color>
+    <color name="ripple_color">#1F000000</color>
 </resources>

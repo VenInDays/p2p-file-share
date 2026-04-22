@@ -3,19 +3,29 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="#FAFAFA">
 
-    <EditText
-        android:id="@+id/etFileContent"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="top|start"
-        android:inputType="textMultiLine"
-        android:padding="12dp"
-        android:textSize="14sp"
-        android:background="@null"
-        android:fontFamily="monospace"
-        android:scrollbars="vertical"
-        android:scrollbarStyle="insideOverlay" />
+        android:layout_height="match_parent">
+
+        <EditText
+            android:id="@+id/etFileContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="top|start"
+            android:inputType="textMultiLine"
+            android:padding="16dp"
+            android:textSize="14sp"
+            android:background="@null"
+            android:fontFamily="monospace"
+            android:scrollbars="vertical"
+            android:scrollbarStyle="insideOverlay"
+            android:lineSpacingExtra="4dp"
+            android:textColor="#212121"
+            android:minLines="30" />
+
+    </ScrollView>
 
 </LinearLayout>

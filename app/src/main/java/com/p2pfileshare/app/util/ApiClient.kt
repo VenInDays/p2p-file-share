@@ -21,6 +21,55 @@ class ApiClient {
     private val gson = Gson()
     private val tag = "ApiClient"
 
+    companion object {
+        /** Known text file extensions that can be edited */
+        val TEXT_EXTENSIONS = setOf(
+            ".txt", ".log", ".md", ".json", ".xml", ".html", ".htm", ".css", ".js",
+            ".csv", ".properties", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf",
+            ".sh", ".bat", ".ps1", ".py", ".java", ".kt", ".c", ".cpp", ".h",
+            ".hpp", ".cs", ".rb", ".php", ".pl", ".sql", ".gradle", ".gitignore",
+            ".dockerignore", ".env", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
+            ".scss", ".sass", ".less", ".rst", ".tex", ".svg", ".xaml", ".rs",
+            ".go", ".swift", ".dart", ".lua", ".r", ".m", ".mm"
+        )
+
+        val IMAGE_EXTENSIONS = setOf(
+            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"
+        )
+
+        val VIDEO_EXTENSIONS = setOf(
+            ".mp4", ".3gp", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv"
+        )
+
+        val AUDIO_EXTENSIONS = setOf(
+            ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"
+        )
+
+        fun isTextFile(name: String): Boolean {
+            val lower = name.lowercase()
+            return TEXT_EXTENSIONS.any { lower.endsWith(it) }
+        }
+
+        fun isImageFile(name: String): Boolean {
+            val lower = name.lowercase()
+            return IMAGE_EXTENSIONS.any { lower.endsWith(it) }
+        }
+
+        fun isVideoFile(name: String): Boolean {
+            val lower = name.lowercase()
+            return VIDEO_EXTENSIONS.any { lower.endsWith(it) }
+        }
+
+        fun isAudioFile(name: String): Boolean {
+            val lower = name.lowercase()
+            return AUDIO_EXTENSIONS.any { lower.endsWith(it) }
+        }
+
+        fun isPreviewable(name: String): Boolean {
+            return isImageFile(name) || isVideoFile(name)
+        }
+    }
+
     suspend fun getInfo(peer: PeerDevice): ApiResponse? = withContext(Dispatchers.IO) {
         try {
             val json = httpGet("http://${peer.host}:${peer.port}/api/info")
@@ -78,6 +127,31 @@ class ApiClient {
         }
     }
 
+    /** Download file to a specific target file (for preview caching) */
+    suspend fun downloadFileTo(peer: PeerDevice, path: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val encodedPath = URLEncoder.encode(path, "UTF-8")
+            val url = URL("http://${peer.host}:${peer.port}/api/download?path=$encodedPath")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 120000
+
+            conn.inputStream.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (input.read(buffer).also { len = it } > 0) {
+                        output.write(buffer, 0, len)
+                    }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "downloadFileTo failed", e)
+            false
+        }
+    }
+
     suspend fun uploadFile(peer: PeerDevice, file: File, targetPath: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val boundary = "----P2PBoundary${System.currentTimeMillis()}"
@@ -92,7 +166,6 @@ class ApiClient {
             conn.readTimeout = 120000
 
             DataOutputStream(conn.outputStream).use { dos ->
-                // Write file part
                 dos.writeBytes("--$boundary\r\n")
                 dos.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n")
                 dos.writeBytes("Content-Type: application/octet-stream\r\n\r\n")

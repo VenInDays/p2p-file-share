@@ -38,6 +38,7 @@ class FileEditorActivity : AppCompatActivity() {
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = fileName
+        supportActionBar?.subtitle = "Chỉnh sửa"
 
         val content = intent.getStringExtra("file_content") ?: ""
         editText.setText(content)

@@ -4,20 +4,21 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:background="#F5F5F5">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="12dp">
 
-        <!-- Device IP Address (NEW) -->
+        <!-- Device IP Address -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="2dp"
             app:strokeColor="@color/colorPrimary"
             app:strokeWidth="1dp">
@@ -33,7 +34,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="IP của máy này"
-                    android:textSize="16sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/colorPrimary" />
 
@@ -42,9 +43,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Đang lấy..."
-                    android:textSize="22sp"
+                    android:textSize="24sp"
                     android:textStyle="bold"
-                    android:textColor="@android:color/black"
+                    android:textColor="#212121"
                     android:layout_marginTop="4dp"
                     android:fontFamily="monospace" />
 
@@ -54,7 +55,7 @@
                     android:layout_height="wrap_content"
                     android:text="Port: 9527"
                     android:textSize="13sp"
-                    android:textColor="@android:color/darker_gray"
+                    android:textColor="#757575"
                     android:layout_marginTop="2dp"
                     android:fontFamily="monospace" />
 
@@ -63,7 +64,7 @@
                     android:layout_height="wrap_content"
                     android:text="Nhập IP này vào máy kia (Menu > Kết nối thủ công) để kết nối"
                     android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray"
+                    android:textColor="#9E9E9E"
                     android:layout_marginTop="6dp" />
 
             </LinearLayout>
@@ -74,8 +75,8 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="2dp">
 
             <LinearLayout
@@ -102,15 +103,16 @@
                             android:text="Khóa máy này"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="@android:color/black" />
+                            android:textColor="#212121" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="Bật: máy khác không thể truy cập máy bạn\nBạn vẫn có thể truy cập máy khác"
                             android:textSize="12sp"
-                            android:textColor="@android:color/darker_gray"
-                            android:layout_marginTop="4dp" />
+                            android:textColor="#9E9E9E"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="2dp" />
 
                     </LinearLayout>
 
@@ -129,8 +131,8 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="2dp">
 
             <LinearLayout
@@ -152,14 +154,14 @@
                         android:text="Tự động khởi động"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black" />
+                        android:textColor="#212121" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="Tự mở app khi bật máy"
                         android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
+                        android:textColor="#9E9E9E"
                         android:layout_marginTop="4dp" />
 
                 </LinearLayout>
@@ -178,8 +180,8 @@
             android:id="@+id/cardDeviceName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="2dp">
 
             <LinearLayout
@@ -194,7 +196,7 @@
                     android:text="Tên thiết bị"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="@android:color/black" />
+                    android:textColor="#212121" />
 
                 <TextView
                     android:id="@+id/tvDeviceName"
@@ -210,7 +212,7 @@
                     android:layout_height="wrap_content"
                     android:text="Chạm để đổi tên"
                     android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray" />
+                    android:textColor="#9E9E9E" />
 
             </LinearLayout>
 
@@ -221,8 +223,8 @@
             android:id="@+id/cardRestartService"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="2dp">
 
             <LinearLayout
@@ -237,14 +239,14 @@
                     android:text="Khởi động lại dịch vụ"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="@android:color/black" />
+                    android:textColor="#212121" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Chạm để restart P2P service"
                     android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray"
+                    android:textColor="#9E9E9E"
                     android:layout_marginTop="4dp" />
 
             </LinearLayout>
@@ -255,11 +257,11 @@
             android:id="@+id/tvVersion"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="P2P File Share v1.3.0"
+            android:text="P2P File Share v1.4.0"
             android:textSize="12sp"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="#9E9E9E"
             android:gravity="center"
-            android:layout_marginTop="24dp" />
+            android:layout_marginTop="16dp" />
 
     </LinearLayout>
 

@@ -10,15 +10,18 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.text.InputType
+import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.GridLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -26,6 +29,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.p2pfileshare.app.App
 import com.p2pfileshare.app.R
@@ -89,7 +93,6 @@ class MainActivity : AppCompatActivity() {
                 onLost = { name -> runOnUiThread { peerAdapter.removePeer(name) } }
             )
 
-            // Update with existing peers
             val existingPeers = P2PService.getDiscoveredPeers()
             if (existingPeers.isNotEmpty()) {
                 peerAdapter.setPeers(existingPeers)
@@ -140,8 +143,6 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Start service regardless of permission result
-            // The service will handle its own errors gracefully
             startP2PService()
         }
     }
@@ -164,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         peerAdapter = PeerAdapter(this) { peer -> connectToPeer(peer) }
         fileAdapter = FileListAdapter(this,
             onItemClick = { file -> onFileItemClick(file) },
-            onItemLongClick = { file -> onFileItemLongClick(file) }
+            onItemLongClick = { file -> showFileOptionsModal(file) }
         )
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = peerAdapter
@@ -182,7 +183,7 @@ class MainActivity : AppCompatActivity() {
 
         fabAdd.setOnClickListener {
             if (isBrowsingFiles && currentPeer != null) {
-                showCreateDialog()
+                showCreateModal()
             }
         }
     }
@@ -191,22 +192,18 @@ class MainActivity : AppCompatActivity() {
         val permissions = mutableListOf<String>()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ (API 33): Use scoped media permissions
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
-            // Notification permission for Android 13+
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11-12 (API 30-32)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         } else {
-            // Android 8-10 (API 26-29)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
@@ -216,11 +213,9 @@ class MainActivity : AppCompatActivity() {
         if (permissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
-            // All permissions already granted, start service
             startP2PService()
         }
 
-        // Request all files access for Android 11+ (API 30+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 if (!Environment.isExternalStorageManager()) {
@@ -269,6 +264,7 @@ class MainActivity : AppCompatActivity() {
         pathHistory.clear()
         isBrowsingFiles = true
 
+        fileAdapter.currentPeer = peer
         supportActionBar?.title = peer.name
         recyclerView.adapter = fileAdapter
         fabAdd.show()
@@ -307,48 +303,171 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ===== File click: tap to preview, long-press for options modal =====
+
     private fun onFileItemClick(file: FileItem) {
         if (file.isDirectory) {
+            // Enter directory
             pathHistory.add(currentPath)
             browsePath(file.path)
         } else {
-            showFileOptionsDialog(file)
-        }
-    }
-
-    private fun onFileItemLongClick(file: FileItem) {
-        showFileOptionsDialog(file)
-    }
-
-    private fun showFileOptionsDialog(file: FileItem) {
-        val options = if (file.isDirectory) {
-            arrayOf("Tải xuống (ZIP)", "Đổi tên", "Xóa")
-        } else {
-            val isTextFile = file.name.endsWith(".txt") || file.name.endsWith(".log") ||
-                    file.name.endsWith(".md") || file.name.endsWith(".json") ||
-                    file.name.endsWith(".xml") || file.name.endsWith(".html") ||
-                    file.name.endsWith(".css") || file.name.endsWith(".js") ||
-                    file.name.endsWith(".csv") || file.name.endsWith(".properties")
-            if (isTextFile) {
-                arrayOf("Tải xuống", "Chỉnh sửa", "Đổi tên", "Xóa")
+            // Preview file (image/video/text) or show options for unsupported types
+            if (FilePreviewActivity.isPreviewable(file.name)) {
+                previewFile(file)
             } else {
-                arrayOf("Tải xuống", "Đổi tên", "Xóa")
+                showFileOptionsModal(file)
             }
         }
-
-        AlertDialog.Builder(this)
-            .setTitle(file.name)
-            .setItems(options) { _, which ->
-                when (options[which]) {
-                    "Tải xuống" -> downloadFile(file)
-                    "Tải xuống (ZIP)" -> downloadFile(file)
-                    "Chỉnh sửa" -> editFile(file)
-                    "Đổi tên" -> showRenameDialog(file)
-                    "Xóa" -> showDeleteConfirmDialog(file)
-                }
-            }
-            .show()
     }
+
+    private fun previewFile(file: FileItem) {
+        val peer = currentPeer ?: return
+        val intent = Intent(this, FilePreviewActivity::class.java)
+        intent.putExtra("peer_host", peer.host)
+        intent.putExtra("peer_port", peer.port)
+        intent.putExtra("file_path", file.path)
+        intent.putExtra("file_name", file.name)
+        intent.putExtra("file_size", file.size)
+        intent.putExtra("file_mime", file.mimeType)
+        startActivity(intent)
+    }
+
+    // ===== Bottom Sheet Modal (replaces AlertDialog) =====
+
+    private fun showFileOptionsModal(file: FileItem) {
+        val bottomSheet = BottomSheetDialog(this)
+        val view = LayoutInflater.from(this).inflate(R.layout.modal_file_options, null)
+        bottomSheet.setContentView(view)
+
+        val modalIcon: ImageView = view.findViewById(R.id.modalIcon)
+        val modalFileName: TextView = view.findViewById(R.id.modalFileName)
+        val modalFileDetails: TextView = view.findViewById(R.id.modalFileDetails)
+        val gridOptions: ViewGroup = view.findViewById(R.id.gridOptions)
+
+        // Set header info
+        modalFileName.text = file.name
+        val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(file.lastModified)
+        modalFileDetails.text = if (file.isDirectory) "Thư mục · $dateStr" else "${formatFileSize(file.size)} · $dateStr"
+
+        if (file.isDirectory) {
+            modalIcon.setImageResource(R.drawable.ic_folder)
+        } else {
+            modalIcon.setImageResource(getIconResource(file))
+        }
+
+        // Build options
+        val options = buildFileOptions(file)
+        gridOptions.columnCount = options.size.coerceAtMost(4)
+
+        for (option in options) {
+            val optionView = LayoutInflater.from(this).inflate(R.layout.item_modal_option, gridOptions, false)
+            val optionIcon: ImageView = optionView.findViewById(R.id.optionIcon)
+            val optionLabel: TextView = optionView.findViewById(R.id.optionLabel)
+
+            optionIcon.setImageResource(option.icon)
+            optionIcon.imageTintList = ContextCompat.getColorStateList(this, option.tintColor)
+            optionLabel.text = option.label
+
+            optionView.setOnClickListener {
+                bottomSheet.dismiss()
+                option.action()
+            }
+
+            val params = optionView.layoutParams as GridLayout.LayoutParams
+            params.width = 0
+            params.columnWeight = 1f
+            optionView.layoutParams = params
+
+            gridOptions.addView(optionView)
+        }
+
+        bottomSheet.show()
+    }
+
+    private fun buildFileOptions(file: FileItem): List<FileOption> {
+        val options = mutableListOf<FileOption>()
+
+        if (file.isDirectory) {
+            options.add(FileOption(R.drawable.ic_download, "Tải ZIP", R.color.colorPrimary) { downloadFile(file) })
+            options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
+            options.add(FileOption(R.drawable.ic_delete, "Xóa", android.R.color.holo_red_dark) { showDeleteConfirmDialog(file) })
+        } else {
+            // Preview option for previewable files
+            if (FilePreviewActivity.isPreviewable(file.name)) {
+                options.add(FileOption(R.drawable.ic_preview, "Xem", R.color.colorPrimary) { previewFile(file) })
+            }
+            // Download
+            options.add(FileOption(R.drawable.ic_download, "Tải xuống", R.color.colorPrimary) { downloadFile(file) })
+            // Edit for text files
+            if (FilePreviewActivity.isTextFile(file.name)) {
+                options.add(FileOption(R.drawable.ic_edit, "Sửa", R.color.colorAccent) { editFile(file) })
+            }
+            // Rename
+            options.add(FileOption(R.drawable.ic_rename, "Đổi tên", R.color.colorAccent) { showRenameDialog(file) })
+            // Delete
+            options.add(FileOption(R.drawable.ic_delete, "Xóa", android.R.color.holo_red_dark) { showDeleteConfirmDialog(file) })
+        }
+
+        return options
+    }
+
+    data class FileOption(
+        val icon: Int,
+        val label: String,
+        val tintColor: Int,
+        val action: () -> Unit
+    )
+
+    // ===== Create Modal (BottomSheet) =====
+
+    private fun showCreateModal() {
+        val bottomSheet = BottomSheetDialog(this)
+        val view = LayoutInflater.from(this).inflate(R.layout.modal_file_options, null)
+        bottomSheet.setContentView(view)
+
+        val modalIcon: ImageView = view.findViewById(R.id.modalIcon)
+        val modalFileName: TextView = view.findViewById(R.id.modalFileName)
+        val modalFileDetails: TextView = view.findViewById(R.id.modalFileDetails)
+        val gridOptions: ViewGroup = view.findViewById(R.id.gridOptions)
+
+        modalFileName.text = "Tạo mới"
+        modalFileDetails.text = "Chọn thao tác"
+        modalIcon.setImageResource(R.drawable.ic_add)
+
+        val options = listOf(
+            FileOption(R.drawable.ic_folder, "Thư mục", R.color.colorPrimary) { showCreateFolderDialog() },
+            FileOption(R.drawable.ic_text, "File văn bản", R.color.colorAccent) { showCreateFileDialog() },
+            FileOption(R.drawable.ic_upload, "Tải lên", R.color.colorPrimary) { openFilePicker() }
+        )
+
+        gridOptions.columnCount = options.size
+
+        for (option in options) {
+            val optionView = LayoutInflater.from(this).inflate(R.layout.item_modal_option, gridOptions, false)
+            val optionIcon: ImageView = optionView.findViewById(R.id.optionIcon)
+            val optionLabel: TextView = optionView.findViewById(R.id.optionLabel)
+
+            optionIcon.setImageResource(option.icon)
+            optionIcon.imageTintList = ContextCompat.getColorStateList(this, option.tintColor)
+            optionLabel.text = option.label
+
+            optionView.setOnClickListener {
+                bottomSheet.dismiss()
+                option.action()
+            }
+
+            val params = optionView.layoutParams as GridLayout.LayoutParams
+            params.width = 0
+            params.columnWeight = 1f
+            optionView.layoutParams = params
+
+            gridOptions.addView(optionView)
+        }
+
+        bottomSheet.show()
+    }
+
+    // ===== File Operations =====
 
     private fun downloadFile(file: FileItem) {
         val peer = currentPeer ?: return
@@ -397,9 +516,15 @@ class MainActivity : AppCompatActivity() {
             setSelection(file.name.length)
         }
 
-        AlertDialog.Builder(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(input)
+        }
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Đổi tên")
-            .setView(input)
+            .setView(container)
             .setPositiveButton("OK") { _, _ ->
                 val newName = input.text.toString().trim()
                 if (newName.isNotEmpty() && newName != file.name) {
@@ -407,7 +532,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Hủy", null)
-            .show()
+            .create()
+        dialog.show()
     }
 
     private fun renameFile(file: FileItem, newName: String) {
@@ -426,12 +552,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteConfirmDialog(file: FileItem) {
-        AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Xác nhận xóa")
             .setMessage("Bạn có chắc muốn xóa \"${file.name}\" không?")
             .setPositiveButton("Xóa") { _, _ -> deleteFile(file) }
             .setNegativeButton("Hủy", null)
-            .show()
+            .create()
+        dialog.show()
     }
 
     private fun deleteFile(file: FileItem) {
@@ -449,28 +576,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showCreateDialog() {
-        val options = arrayOf("Tạo thư mục", "Tạo file văn bản", "Tải file lên")
-        AlertDialog.Builder(this)
-            .setTitle("Tạo mới")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> showCreateFolderDialog()
-                    1 -> showCreateFileDialog()
-                    2 -> openFilePicker()
-                }
-            }
-            .show()
-    }
-
     private fun showCreateFolderDialog() {
         val input = EditText(this).apply {
             hint = "Tên thư mục"
         }
 
-        AlertDialog.Builder(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(input)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Tạo thư mục mới")
-            .setView(input)
+            .setView(container)
             .setPositiveButton("Tạo") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
@@ -486,9 +605,15 @@ class MainActivity : AppCompatActivity() {
             hint = "Tên file (ví dụ: note.txt)"
         }
 
-        AlertDialog.Builder(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(input)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Tạo file mới")
-            .setView(input)
+            .setView(container)
             .setPositiveButton("Tạo") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
@@ -572,11 +697,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showManualConnectDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 10)
-        }
-
         val hostInput = EditText(this).apply {
             hint = "IP Address (ví dụ: 192.168.1.100)"
             inputType = InputType.TYPE_CLASS_TEXT
@@ -587,12 +707,16 @@ class MainActivity : AppCompatActivity() {
             setText("9527")
         }
 
-        layout.addView(hostInput)
-        layout.addView(portInput)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(hostInput)
+            addView(portInput)
+        }
 
-        AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Kết nối thủ công")
-            .setView(layout)
+            .setView(container)
             .setPositiveButton("Kết nối") { _, _ ->
                 val host = hostInput.text.toString().trim()
                 val port = portInput.text.toString().toIntOrNull() ?: 9527
@@ -611,6 +735,7 @@ class MainActivity : AppCompatActivity() {
         currentPath = "/"
         pathHistory.clear()
 
+        fileAdapter.currentPeer = null
         supportActionBar?.title = "P2P File Share"
         recyclerView.adapter = peerAdapter
         fabAdd.hide()
@@ -628,24 +753,53 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (isBrowsingFiles && pathHistory.isNotEmpty()) {
-            pathHistory.removeAt(pathHistory.size - 1)
-            if (pathHistory.isEmpty()) {
-                showPeerList()
+        if (isBrowsingFiles) {
+            if (pathHistory.isNotEmpty()) {
+                pathHistory.removeAt(pathHistory.size - 1)
+                if (pathHistory.isEmpty()) {
+                    showPeerList()
+                } else {
+                    currentPath = pathHistory.last()
+                    browsePath(currentPath)
+                }
             } else {
-                currentPath = pathHistory.last()
-                browsePath(currentPath)
+                // At root level of browsing, go back to peer list
+                showPeerList()
             }
         } else {
             @Suppress("DEPRECATION")
             super.onBackPressed()
         }
     }
+
+    // ===== Helper methods =====
+
+    private fun getIconResource(file: FileItem): Int {
+        val name = file.name.lowercase()
+        return when {
+            file.isDirectory -> R.drawable.ic_folder
+            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
+            name.endsWith(".gif") || name.endsWith(".bmp") || name.endsWith(".webp") -> R.drawable.ic_image
+            name.endsWith(".mp4") || name.endsWith(".avi") || name.endsWith(".mkv") -> R.drawable.ic_video
+            name.endsWith(".mp3") || name.endsWith(".wav") || name.endsWith(".flac") -> R.drawable.ic_audio
+            name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".md") -> R.drawable.ic_text
+            name.endsWith(".pdf") -> R.drawable.ic_pdf
+            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") -> R.drawable.ic_archive
+            name.endsWith(".apk") -> R.drawable.ic_apk
+            else -> R.drawable.ic_file
+        }
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+            bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024))} MB"
+            else -> "${"%.1f".format(bytes / (1024.0 * 1024 * 1024))} GB"
+        }
+    }
 }
 
-/**
- * Simple log helper to avoid crashes from logging
- */
 private object LogHelper {
     fun e(tag: String, msg: String, e: Exception) {
         try {
