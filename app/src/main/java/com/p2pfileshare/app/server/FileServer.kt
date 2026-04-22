@@ -332,7 +332,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                         size = entry.size,
                         compressedSize = entry.compressedSize,
                         isDirectory = entry.isDirectory,
-                        lastModified = entry.lastModified.time
+                        lastModified = entry.time
                     )
                 )
             }
