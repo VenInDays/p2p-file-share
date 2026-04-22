@@ -9,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import com.p2pfileshare.app.App
 import com.p2pfileshare.app.R
@@ -30,9 +33,18 @@ class P2PService : Service() {
     private val prefs by lazy { PreferencesManager(this) }
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // WiFi multicast lock - REQUIRED for NSD discovery to work on many devices
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var discoveredPeers = mutableListOf<PeerDevice>()
     private var onPeerDiscovered: ((PeerDevice) -> Unit)? = null
     private var onPeerLost: ((String) -> Unit)? = null
+
+    // Retry counter for discovery
+    private var discoveryRetryCount = 0
+    private val MAX_DISCOVERY_RETRIES = 5
+    private val DISCOVERY_RETRY_DELAY = 3000L // 3 seconds
 
     companion object {
         var isRunning = false
@@ -74,6 +86,10 @@ class P2PService : Service() {
         fun getDiscoveredPeers(): List<PeerDevice> {
             return instance?.discoveredPeers?.toList() ?: emptyList()
         }
+
+        fun getServerPort(): Int {
+            return instance?.fileServer?.listeningPort ?: 0
+        }
     }
 
     override fun onCreate() {
@@ -82,6 +98,7 @@ class P2PService : Service() {
             instance = this
             isRunning = true
             createNotificationChannel()
+            acquireMulticastLock()
         } catch (e: Exception) {
             Log.e(tag, "onCreate failed", e)
         }
@@ -90,7 +107,6 @@ class P2PService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             // CRITICAL: Must call startForeground immediately on Android 8+
-            // otherwise app crashes with ForegroundServiceDidNotStartInTimeException
             val notification = buildNotification("P2P File Share đang chạy")
             startForegroundSafely(App.NOTIFICATION_ID, notification)
 
@@ -106,7 +122,6 @@ class P2PService : Service() {
             }
         } catch (e: Exception) {
             Log.e(tag, "onStartCommand failed", e)
-            // Still try to start foreground to prevent crash
             try {
                 val notification = buildNotification("P2P File Share - Khởi động lại")
                 startForegroundSafely(App.NOTIFICATION_ID, notification)
@@ -125,6 +140,8 @@ class P2PService : Service() {
             unregisterService()
             stopDiscovery()
             stopServer()
+            releaseMulticastLock()
+            mainHandler.removeCallbacksAndMessages(null)
         } catch (e: Exception) {
             Log.e(tag, "onDestroy failed", e)
         } finally {
@@ -134,7 +151,6 @@ class P2PService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Restart service when app is swiped away
         try {
             val restartIntent = Intent(this, P2PService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -144,7 +160,6 @@ class P2PService : Service() {
             }
         } catch (e: Exception) {
             Log.e(tag, "Failed to restart service after task removed", e)
-            // Try scheduling restart via AlarmManager as fallback
             try {
                 val restartTime = System.currentTimeMillis() + 1000
                 val alarmIntent = Intent(this, com.p2pfileshare.app.receiver.BootReceiver::class.java)
@@ -167,10 +182,39 @@ class P2PService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /**
-     * Safely call startForeground() with comprehensive error handling.
-     * This prevents ForegroundServiceDidNotStartInTimeException crashes.
-     */
+    // ============ WiFi Multicast Lock ============
+    // Required for NSD to work on many Android devices
+    // Without this, discovery silently fails on some WiFi networks
+
+    private fun acquireMulticastLock() {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifiManager.createMulticastLock("P2PFileShareLock").apply {
+                setReferenceCounted(true)
+                acquire()
+            }
+            Log.d(tag, "MulticastLock acquired")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to acquire multicast lock", e)
+        }
+    }
+
+    private fun releaseMulticastLock() {
+        try {
+            multicastLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                }
+            }
+            multicastLock = null
+            Log.d(tag, "MulticastLock released")
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to release multicast lock", e)
+        }
+    }
+
+    // ============ StartForeground safely ============
+
     private fun startForegroundSafely(id: Int, notification: Notification) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -185,7 +229,6 @@ class P2PService : Service() {
             } catch (e2: Exception) {
                 Log.e(tag, "startForeground failed (attempt 2)", e2)
                 try {
-                    // Last resort: create a minimal notification
                     val fallbackNotification = buildFallbackNotification()
                     startForeground(id, fallbackNotification)
                 } catch (e3: Exception) {
@@ -194,6 +237,8 @@ class P2PService : Service() {
             }
         }
     }
+
+    // ============ Server ============
 
     private fun startServer() {
         try {
@@ -205,7 +250,6 @@ class P2PService : Service() {
             updateNotification("Đang chia sẻ trên port ${fileServer?.listeningPort}")
         } catch (e: Exception) {
             Log.e(tag, "Failed to start server on port ${prefs.serverPort}", e)
-            // Try with port 0 (auto-assign)
             try {
                 fileServer = FileServer(0, prefs).also { server ->
                     server.start()
@@ -228,6 +272,8 @@ class P2PService : Service() {
         }
     }
 
+    // ============ NSD Registration ============
+
     private fun registerService() {
         try {
             nsdManager = getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -243,6 +289,8 @@ class P2PService : Service() {
                 }
                 override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
                     Log.e(tag, "Registration failed: $errorCode")
+                    // Retry registration after delay
+                    mainHandler.postDelayed({ registerService() }, 5000)
                 }
                 override fun onServiceUnregistered(info: NsdServiceInfo) {
                     Log.d(tag, "Service unregistered")
@@ -261,66 +309,43 @@ class P2PService : Service() {
     private fun unregisterService() {
         try {
             registrationListener?.let { nsdManager?.unregisterService(it) }
+            registrationListener = null
         } catch (e: Exception) {
             Log.e(tag, "Failed to unregister service", e)
         }
     }
 
+    // ============ NSD Discovery ============
+
     private fun startDiscovery() {
         try {
+            stopDiscovery() // Clean up any existing discovery first
+
             discoveryListener = object : NsdManager.DiscoveryListener {
                 override fun onDiscoveryStarted(serviceType: String) {
-                    Log.d(tag, "Discovery started")
+                    Log.d(tag, "Discovery started for: $serviceType")
+                    discoveryRetryCount = 0
                 }
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                    Log.d(tag, "Service found: ${serviceInfo.serviceName}")
-                    if (serviceInfo.serviceName.startsWith(App.SERVICE_NAME_PREFIX)) {
-                        try {
-                            nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                                    Log.e(tag, "Resolve failed: $errorCode")
-                                }
-
-                                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                                    try {
-                                        val deviceName = serviceInfo.serviceName
-                                            .removePrefix("${App.SERVICE_NAME_PREFIX}_")
-                                        val peer = PeerDevice(
-                                            name = deviceName,
-                                            host = serviceInfo.host.hostAddress,
-                                            port = serviceInfo.port
-                                        )
-                                        Log.d(tag, "Peer resolved: $peer")
-
-                                        synchronized(discoveredPeers) {
-                                            val existing = discoveredPeers.indexOfFirst { it.host == peer.host }
-                                            if (existing >= 0) {
-                                                discoveredPeers[existing] = peer
-                                            } else {
-                                                discoveredPeers.add(peer)
-                                            }
-                                        }
-
-                                        onPeerDiscovered?.invoke(peer)
-                                    } catch (e: Exception) {
-                                        Log.e(tag, "Error processing resolved peer", e)
-                                    }
-                                }
-                            })
-                        } catch (e: Exception) {
-                            Log.e(tag, "Error resolving service", e)
-                        }
+                    Log.d(tag, "Service found: ${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
+                    // Check if this is our service - use contains() because some devices append (N)
+                    // Android may append a number like "P2PFileShare_MyPhone (2)" if name collision
+                    val serviceName = serviceInfo.serviceName ?: ""
+                    if (serviceName.startsWith(App.SERVICE_NAME_PREFIX)) {
+                        resolveService(serviceInfo)
                     }
                 }
 
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                     Log.d(tag, "Service lost: ${serviceInfo.serviceName}")
                     try {
-                        val deviceName = serviceInfo.serviceName
+                        val serviceName = serviceInfo.serviceName ?: return
+                        val deviceName = serviceName
                             .removePrefix("${App.SERVICE_NAME_PREFIX}_")
+                            .replace(Regex(" \\(\\d+\\)$"), "") // Remove (2) suffix
                         synchronized(discoveredPeers) {
-                            discoveredPeers.removeAll { it.name == deviceName }
+                            discoveredPeers.removeAll { it.name == deviceName || serviceName.startsWith("${App.SERVICE_NAME_PREFIX}_${it.name}") }
                         }
                         onPeerLost?.invoke(deviceName)
                     } catch (e: Exception) {
@@ -333,7 +358,15 @@ class P2PService : Service() {
                 }
 
                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                    Log.e(tag, "Discovery start failed: $errorCode")
+                    Log.e(tag, "Discovery start failed: $errorCode, retry=$discoveryRetryCount")
+                    if (discoveryRetryCount < MAX_DISCOVERY_RETRIES) {
+                        discoveryRetryCount++
+                        mainHandler.postDelayed({
+                            Log.d(tag, "Retrying discovery (attempt $discoveryRetryCount)")
+                            stopDiscovery()
+                            startDiscovery()
+                        }, DISCOVERY_RETRY_DELAY)
+                    }
                 }
 
                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
@@ -341,19 +374,76 @@ class P2PService : Service() {
                 }
             }
 
+            Log.d(tag, "Starting NSD discovery for type: ${App.SERVICE_TYPE}")
             nsdManager?.discoverServices(App.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
         } catch (e: Exception) {
             Log.e(tag, "Failed to start discovery", e)
         }
     }
 
+    private fun resolveService(serviceInfo: NsdServiceInfo) {
+        try {
+            nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    Log.e(tag, "Resolve failed: $errorCode for ${serviceInfo.serviceName}")
+                    // Retry resolve once
+                    if (errorCode != NsdManager.FAILURE_ALREADY_ACTIVE) {
+                        mainHandler.postDelayed({ resolveService(serviceInfo) }, 1000)
+                    }
+                }
+
+                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                    try {
+                        val rawName = serviceInfo.serviceName ?: return
+                        val deviceName = rawName
+                            .removePrefix("${App.SERVICE_NAME_PREFIX}_")
+                            .replace(Regex(" \\(\\d+\\)$"), "")
+
+                        val hostAddress = serviceInfo.host?.hostAddress
+                        if (hostAddress == null) {
+                            Log.e(tag, "Resolved peer has null host address")
+                            return
+                        }
+
+                        val peer = PeerDevice(
+                            name = deviceName,
+                            host = hostAddress,
+                            port = serviceInfo.port
+                        )
+                        Log.d(tag, "Peer resolved: $peer")
+
+                        synchronized(discoveredPeers) {
+                            val existing = discoveredPeers.indexOfFirst { it.host == peer.host }
+                            if (existing >= 0) {
+                                discoveredPeers[existing] = peer
+                            } else {
+                                discoveredPeers.add(peer)
+                            }
+                        }
+
+                        onPeerDiscovered?.invoke(peer)
+                    } catch (e: Exception) {
+                        Log.e(tag, "Error processing resolved peer", e)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(tag, "Error resolving service", e)
+        }
+    }
+
     private fun stopDiscovery() {
         try {
-            discoveryListener?.let { nsdManager?.stopServiceDiscovery(it) }
+            discoveryListener?.let { listener ->
+                nsdManager?.stopServiceDiscovery(listener)
+            }
+            discoveryListener = null
         } catch (e: Exception) {
             Log.e(tag, "Failed to stop discovery", e)
         }
     }
+
+    // ============ Notifications ============
 
     private fun createNotificationChannel() {
         try {
@@ -413,9 +503,6 @@ class P2PService : Service() {
         }
     }
 
-    /**
-     * Minimal fallback notification that should work on all devices
-     */
     private fun buildFallbackNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP

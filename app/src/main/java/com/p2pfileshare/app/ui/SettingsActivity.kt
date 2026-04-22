@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
+import com.p2pfileshare.app.App
 import com.p2pfileshare.app.R
 import com.p2pfileshare.app.service.P2PService
 import com.p2pfileshare.app.util.PreferencesManager
@@ -19,6 +20,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var switchLock: SwitchMaterial
     private lateinit var switchAutoStart: SwitchMaterial
     private lateinit var tvDeviceName: TextView
+    private lateinit var tvIpAddress: TextView
+    private lateinit var tvPortInfo: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +35,12 @@ class SettingsActivity : AppCompatActivity() {
         setupListeners()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Refresh IP every time settings is shown
+        updateIpInfo()
+    }
+
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
@@ -41,10 +50,27 @@ class SettingsActivity : AppCompatActivity() {
         switchLock = findViewById(R.id.switchLock)
         switchAutoStart = findViewById(R.id.switchAutoStart)
         tvDeviceName = findViewById(R.id.tvDeviceName)
+        tvIpAddress = findViewById(R.id.tvIpAddress)
+        tvPortInfo = findViewById(R.id.tvPortInfo)
 
         switchLock.isChecked = prefs.isLocked
         switchAutoStart.isChecked = prefs.isAutoStart
         tvDeviceName.text = prefs.serviceName
+
+        updateIpInfo()
+    }
+
+    private fun updateIpInfo() {
+        val ip = App.getWifiIpAddress()
+        val port = P2PService.getServerPort().takeIf { it > 0 } ?: prefs.serverPort
+
+        tvIpAddress.text = ip
+        tvPortInfo.text = "Port: $port"
+
+        if (ip == "Unknown") {
+            tvIpAddress.text = "Không có WiFi"
+            tvPortInfo.text = "Hãy kết nối WiFi trước"
+        }
     }
 
     private fun setupListeners() {
@@ -70,6 +96,10 @@ class SettingsActivity : AppCompatActivity() {
             P2PService.stop(this)
             P2PService.start(this)
             Toast.makeText(this, "Đã khởi động lại dịch vụ", Toast.LENGTH_SHORT).show()
+            // Refresh IP after restart
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                updateIpInfo()
+            }, 2000)
         }
     }
 
