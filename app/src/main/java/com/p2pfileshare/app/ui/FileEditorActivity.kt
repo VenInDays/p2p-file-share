@@ -9,8 +9,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.p2pfileshare.app.R
 import com.p2pfileshare.app.util.ApiClient
 import com.p2pfileshare.app.model.PeerDevice
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 

@@ -2,10 +2,8 @@ package com.p2pfileshare.app.util
 
 import android.util.Log
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.p2pfileshare.app.model.ApiResponse
 import com.p2pfileshare.app.model.DirectoryInfo
-import com.p2pfileshare.app.model.FileItem
 import com.p2pfileshare.app.model.PeerDevice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,6 +11,7 @@ import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
