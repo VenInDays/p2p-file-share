@@ -3,6 +3,7 @@ package com.p2pfileshare.app.ui
 import android.os.Bundle
 import android.widget.CompoundButton
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -61,20 +62,39 @@ class SettingsActivity : AppCompatActivity() {
         switchAutoStart.isChecked = prefs.isAutoStart
         tvDeviceName.text = prefs.serviceName
 
-        // Security switches - find by ID, add dynamically if needed
-        switchSecurity = findViewById(R.id.switchSecurity) ?: createSwitch("Bảo mật API", "Chỉ thiết bị có app mới gọi được API")
-        switchRateLimit = findViewById(R.id.switchRateLimit) ?: createSwitch("Rate Limiting", "Chống brute-force (60 req/phút)")
-        switchEncryption = findViewById(R.id.switchEncryption) ?: createSwitch("Mã hóa dữ liệu", "AES-256-GCM cho dữ liệu nhạy cảm")
+        // Security switches - created programmatically (not in XML layout)
+        switchSecurity = createSwitch("Bảo mật API", "Chỉ thiết bị có app mới gọi được API")
+        switchRateLimit = createSwitch("Rate Limiting", "Chống brute-force (60 req/phút)")
+        switchEncryption = createSwitch("Mã hóa dữ liệu", "AES-256-GCM cho dữ liệu nhạy cảm")
 
         switchSecurity.isChecked = prefs.isSecurityEnabled
         switchRateLimit.isChecked = prefs.isRateLimitEnabled
         switchEncryption.isChecked = prefs.isEncryptionEnabled
 
-        // API Token display
-        tvApiToken = findViewById(R.id.tvApiToken) ?: TextView(this).apply {
+        // API Token display - created programmatically
+        tvApiToken = TextView(this).apply {
             text = "API Token: ${SecurityManager.getApiToken().take(12)}..."
             textSize = 12f
             setPadding(16, 8, 16, 8)
+        }
+
+        // Add programmatically created views to the layout
+        val tvVersion = findViewById<TextView>(R.id.tvVersion)
+        val rootLayout = tvVersion.parent as? LinearLayout
+        if (rootLayout != null) {
+            val versionIndex = rootLayout.indexOfChild(tvVersion)
+            // Insert switches and token before the version text
+            if (versionIndex >= 0) {
+                rootLayout.addView(tvApiToken, versionIndex)
+                rootLayout.addView(switchEncryption, versionIndex)
+                rootLayout.addView(switchRateLimit, versionIndex)
+                rootLayout.addView(switchSecurity, versionIndex)
+            } else {
+                rootLayout.addView(switchSecurity)
+                rootLayout.addView(switchRateLimit)
+                rootLayout.addView(switchEncryption)
+                rootLayout.addView(tvApiToken)
+            }
         }
 
         updateIpInfo()

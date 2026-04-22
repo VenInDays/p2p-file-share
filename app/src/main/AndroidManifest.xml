@@ -66,6 +66,13 @@
         <activity
             android:name=".ui.FileEditorActivity"
             android:label="@string/file_editor"
+            android:theme="@style/Theme.P2PFileShare.Editor"
+            android:parentActivityName=".ui.MainActivity" />
+
+        <activity
+            android:name=".ui.FilePreviewActivity"
+            android:label="Xem trước"
+            android:theme="@style/Theme.P2PFileShare.Preview"
             android:parentActivityName=".ui.MainActivity" />
 
         <activity
@@ -73,11 +80,30 @@
             android:label="ZIP Viewer"
             android:parentActivityName=".ui.MainActivity" />
 
+        <activity
+            android:name=".ui.RemoteControlActivity"
+            android:label="Remote Control"
+            android:theme="@style/Theme.P2PFileShare.Remote"
+            android:parentActivityName=".ui.MainActivity" />
+
         <service
             android:name=".service.P2PService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <service
+            android:name=".remote.RemoteGestureService"
+            android:exported="false"
+            android:label="P2P File Share Remote Control"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
 
         <receiver
             android:name=".receiver.BootReceiver"

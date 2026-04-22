@@ -48,6 +48,7 @@ import com.p2pfileshare.app.model.FileItem
 import com.p2pfileshare.app.model.PeerDevice
 import com.p2pfileshare.app.service.P2PService
 import com.p2pfileshare.app.util.ApiClient
+import com.p2pfileshare.app.util.LogHelper
 import com.p2pfileshare.app.util.PreferencesManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

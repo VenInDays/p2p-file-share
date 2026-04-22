@@ -9,10 +9,27 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_search"
+        android:title="Tìm kiếm"
+        android:icon="@drawable/ic_preview"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_view_toggle"
+        android:title="Chuyển đổi xem"
+        android:icon="@drawable/ic_grid"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/action_refresh_peers"
         android:title="Làm mới"
         android:icon="@android:drawable/ic_popup_sync"
         app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_sort"
+        android:title="Sắp xếp"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/action_manual_connect"

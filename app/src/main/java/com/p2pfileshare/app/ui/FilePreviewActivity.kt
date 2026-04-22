@@ -1,6 +1,8 @@
 package com.p2pfileshare.app.ui
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -14,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import coil.ImageLoader
 import coil.load
 import coil.request.ImageRequest
+import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.ui.PlayerView
@@ -24,12 +27,17 @@ import com.p2pfileshare.app.util.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URLEncoder
 
 class FilePreviewActivity : AppCompatActivity() {
 
     private lateinit var apiClient: ApiClient
 
+    // SubsamplingScaleImageView for large images (no OOM, no lag)
+    private var subsamplingImageView: SubsamplingScaleImageView? = null
     private var imageView: ImageView? = null
     private var playerView: PlayerView? = null
     private var progressBar: ProgressBar? = null
@@ -57,6 +65,22 @@ class FilePreviewActivity : AppCompatActivity() {
         tvError = findViewById(R.id.tvError)
         tvFileName = findViewById(R.id.tvFileName)
 
+        // Initialize SubsamplingScaleImageView programmatically
+        subsamplingImageView = SubsamplingScaleImageView(this).apply {
+            id = View.generateViewId()
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            visibility = View.GONE
+            setMinimumScaleType(SubsamplingScaleImageView.SCALE_TYPE_CENTER_INSIDE)
+            setOnClickListener { /* allow tap interactions */ }
+        }
+
+        // Add SubsamplingScaleImageView to the FrameLayout parent
+        val frameLayout = imageView?.parent as? android.widget.FrameLayout
+        frameLayout?.addView(subsamplingImageView, 0)
+
         peerHost = intent.getStringExtra("peer_host") ?: ""
         peerPort = intent.getIntExtra("peer_port", 0)
         filePath = intent.getStringExtra("file_path") ?: ""
@@ -79,39 +103,111 @@ class FilePreviewActivity : AppCompatActivity() {
     }
 
     private fun loadPreview() {
-        val url = getFileUrl()
-
         when {
             isImageFile(fileName) -> {
-                imageView?.visibility = View.VISIBLE
+                imageView?.visibility = View.GONE
+                subsamplingImageView?.visibility = View.VISIBLE
                 playerView?.visibility = View.GONE
-                loadImage(url)
+                loadImageWithSubsampling()
             }
             isVideoFile(fileName) -> {
                 imageView?.visibility = View.GONE
+                subsamplingImageView?.visibility = View.GONE
                 playerView?.visibility = View.VISIBLE
-                loadVideo(url)
+                loadVideo(getFileUrl())
             }
             isTextFile(fileName) -> {
-                // Text files: load content and show
                 imageView?.visibility = View.GONE
+                subsamplingImageView?.visibility = View.GONE
                 playerView?.visibility = View.GONE
                 loadTextContent()
             }
             else -> {
-                // Unsupported preview - show file info
                 showUnsupportedPreview()
             }
         }
     }
 
-    private fun loadImage(url: String) {
+    /**
+     * Load image using SubsamplingScaleImageView for large images.
+     * This prevents OOM and lag even with very large images (300KB+ or multi-MB).
+     * Downloads to a temp file then uses tiling for smooth rendering.
+     */
+    private fun loadImageWithSubsampling() {
         progressBar?.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            try {
+                val tempFile = downloadToTempFile()
+                withContext(Dispatchers.Main) {
+                    progressBar?.visibility = View.GONE
+                    if (tempFile != null && tempFile.exists()) {
+                        // Use SubsamplingScaleImageView for efficient rendering
+                        subsamplingImageView?.setImage(android.net.Uri.fromFile(tempFile))
+                        subsamplingImageView?.visibility = View.VISIBLE
+                    } else {
+                        // Fallback to regular ImageView with Coil for smaller images
+                        loadImageWithCoil()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    progressBar?.visibility = View.GONE
+                    // Fallback to Coil
+                    loadImageWithCoil()
+                }
+            }
+        }
+    }
+
+    /**
+     * Download file to a temporary file for SubsamplingScaleImageView.
+     */
+    private suspend fun downloadToTempFile(): File? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL(getFileUrl())
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 60000
+
+            // Add token header if available
+            val peer = PeerDevice("", peerHost, peerPort)
+            val token = apiClient.getPeerToken(peer)
+            if (token.isNotEmpty()) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
+
+            val tempFile = File(cacheDir, "preview_${System.currentTimeMillis()}_${fileName}")
+            conn.inputStream.use { input ->
+                java.io.FileOutputStream(tempFile).use { output ->
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (input.read(buffer).also { len = it } > 0) {
+                        output.write(buffer, 0, len)
+                    }
+                }
+            }
+            conn.disconnect()
+            tempFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Fallback: Load image with Coil (for small images or when SubsamplingScaleImageView fails).
+     */
+    private fun loadImageWithCoil() {
+        val url = getFileUrl()
+        imageView?.visibility = View.VISIBLE
+        subsamplingImageView?.visibility = View.GONE
+        progressBar?.visibility = View.VISIBLE
+
         try {
             val imageLoader = ImageLoader(this)
             val request = ImageRequest.Builder(this)
                 .data(url)
                 .crossfade(true)
+                .size(1024, 1024) // Limit size to prevent OOM
                 .target(
                     onStart = {
                         progressBar?.visibility = View.VISIBLE
@@ -176,7 +272,6 @@ class FilePreviewActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     progressBar?.visibility = View.GONE
                     if (content != null) {
-                        // Open editor for text files
                         val intent = Intent(this@FilePreviewActivity, FileEditorActivity::class.java)
                         intent.putExtra("peer_host", peerHost)
                         intent.putExtra("peer_port", peerPort)
@@ -200,6 +295,7 @@ class FilePreviewActivity : AppCompatActivity() {
 
     private fun showUnsupportedPreview() {
         imageView?.visibility = View.GONE
+        subsamplingImageView?.visibility = View.GONE
         playerView?.visibility = View.GONE
         progressBar?.visibility = View.GONE
 
@@ -212,6 +308,7 @@ class FilePreviewActivity : AppCompatActivity() {
         tvError?.text = message
         tvError?.visibility = View.VISIBLE
         imageView?.visibility = View.GONE
+        subsamplingImageView?.visibility = View.GONE
         playerView?.visibility = View.GONE
         progressBar?.visibility = View.GONE
     }
@@ -228,7 +325,6 @@ class FilePreviewActivity : AppCompatActivity() {
                 true
             }
             R.id.action_edit_preview -> {
-                // Allow editing ALL file types
                 loadTextContent()
                 true
             }
@@ -264,6 +360,12 @@ class FilePreviewActivity : AppCompatActivity() {
         try {
             exoPlayer?.release()
             exoPlayer = null
+        } catch (e: Exception) {
+            // Ignore
+        }
+        // Clean up temp preview files
+        try {
+            cacheDir.listFiles()?.filter { it.name.startsWith("preview_") }?.forEach { it.delete() }
         } catch (e: Exception) {
             // Ignore
         }

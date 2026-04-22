@@ -41,6 +41,133 @@
             android:gravity="center"
             android:alpha="0.9" />
 
+        <!-- Search bar -->
+        <LinearLayout
+            android:id="@+id/searchBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="8dp"
+            android:background="#FFFFFF"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/etSearch"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:hint="Tìm file..."
+                android:textSize="14sp"
+                android:background="@android:color/transparent"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:inputType="text"
+                android:singleLine="true" />
+
+            <ImageButton
+                android:id="@+id/btnSearchClose"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_close"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Đóng tìm kiếm"
+                app:tint="#757575" />
+
+        </LinearLayout>
+
+        <!-- Sort bar -->
+        <HorizontalScrollView
+            android:id="@+id/sortBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/chipSortName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Tên"
+                    android:textSize="12sp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:background="@drawable/bg_sort_chip"
+                    android:textColor="#757575" />
+
+                <TextView
+                    android:id="@+id/chipSortSize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Kích thước"
+                    android:textSize="12sp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_sort_chip"
+                    android:textColor="#757575" />
+
+                <TextView
+                    android:id="@+id/chipSortDate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Ngày"
+                    android:textSize="12sp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_sort_chip"
+                    android:textColor="#757575" />
+
+                <TextView
+                    android:id="@+id/chipSortType"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Loại"
+                    android:textSize="12sp"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_sort_chip"
+                    android:textColor="#757575" />
+
+            </LinearLayout>
+
+        </HorizontalScrollView>
+
+        <!-- Breadcrumb -->
+        <HorizontalScrollView
+            android:id="@+id/breadcrumbScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/breadcrumbContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+
+        </HorizontalScrollView>
+
         <!-- Thin progress bar -->
         <ProgressBar
             android:id="@+id/progressBar"
@@ -52,6 +179,116 @@
             android:progressTint="@color/colorAccent"
             android:progressBackgroundTint="@color/colorPrimaryDark" />
 
+        <!-- Transfer bar -->
+        <LinearLayout
+            android:id="@+id/transferBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#E3F2FD"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvTransferStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#1565C0" />
+
+            <ProgressBar
+                android:id="@+id/transferProgress"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_marginTop="4dp"
+                android:progressTint="@color/colorAccent"
+                android:progressBackgroundTint="#BBDEFB" />
+
+        </LinearLayout>
+
+        <!-- Selection bar -->
+        <LinearLayout
+            android:id="@+id/selectionBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#E8EAF6"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/btnSelectionClose"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_close"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Đóng"
+                app:tint="#3F51B5" />
+
+            <TextView
+                android:id="@+id/tvSelectionCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#3F51B5"
+                android:paddingStart="8dp" />
+
+            <TextView
+                android:id="@+id/btnSelectAll"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="Chọn tất cả"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="#3F51B5" />
+
+            <ImageButton
+                android:id="@+id/btnBatchDownload"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_download"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Tải về"
+                app:tint="#3F51B5" />
+
+            <ImageButton
+                android:id="@+id/btnBatchCopy"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_copy"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Sao chép"
+                app:tint="#3F51B5" />
+
+            <ImageButton
+                android:id="@+id/btnBatchMove"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_move"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Di chuyển"
+                app:tint="#3F51B5" />
+
+            <ImageButton
+                android:id="@+id/btnBatchDelete"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_delete"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Xóa"
+                app:tint="#E53935" />
+
+        </LinearLayout>
+
         <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
             android:id="@+id/swipeRefresh"
             android:layout_width="match_parent"
@@ -62,6 +299,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
 
+                <!-- List view -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/recyclerView"
                     android:layout_width="match_parent"
@@ -70,16 +308,45 @@
                     android:paddingBottom="88dp"
                     android:paddingTop="4dp" />
 
-                <TextView
-                    android:id="@+id/tvEmptyState"
+                <!-- Grid view -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerViewGrid"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingBottom="88dp"
+                    android:paddingTop="4dp"
+                    android:visibility="gone" />
+
+                <!-- Empty state -->
+                <LinearLayout
+                    android:id="@+id/emptyStateContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
                     android:gravity="center"
-                    android:text="Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app."
-                    android:textColor="#9E9E9E"
-                    android:textSize="16sp"
-                    android:visibility="visible"
-                    android:lineSpacingExtra="4dp" />
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/ivEmptyIcon"
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:src="@drawable/ic_phone"
+                        android:alpha="0.4"
+                        android:contentDescription="Empty" />
+
+                    <TextView
+                        android:id="@+id/tvEmptyState"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:text="Chưa tìm thấy thiết bị nào.\nĐảm bảo 2 máy cùng WiFi và đã mở app."
+                        android:textColor="#9E9E9E"
+                        android:textSize="16sp"
+                        android:lineSpacingExtra="4dp"
+                        android:layout_marginTop="16dp" />
+
+                </LinearLayout>
 
             </FrameLayout>
 

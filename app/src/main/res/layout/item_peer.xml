@@ -21,20 +21,17 @@
         android:padding="16dp"
         android:gravity="center_vertical">
 
-        <ImageView
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:src="@drawable/ic_phone"
-            android:contentDescription="Device"
-            android:padding="8dp"
-            app:tint="@color/colorPrimary"
-            android:background="@drawable/bg_circle_icon" />
+        <View
+            android:id="@+id/viewOnlineDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="#4CAF50"
+            android:layout_marginEnd="12dp" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="16dp"
             android:orientation="vertical">
 
             <TextView
@@ -53,6 +50,14 @@
                 android:textColor="#9E9E9E"
                 android:layout_marginTop="2dp"
                 android:fontFamily="monospace" />
+
+            <TextView
+                android:id="@+id/tvPeerStorage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#757575"
+                android:layout_marginTop="2dp" />
 
         </LinearLayout>
 

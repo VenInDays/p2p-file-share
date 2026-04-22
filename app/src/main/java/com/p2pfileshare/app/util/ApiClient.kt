@@ -361,9 +361,93 @@ class ApiClient {
         }
     }
 
+
+    // ========================
+    // REMOTE CONTROL API
+    // ========================
+
+    data class ScreenInfo(
+        val width: Int = 720,
+        val height: Int = 1280,
+        val captureActive: Boolean = false,
+        val gestureActive: Boolean = false
+    )
+
+    suspend fun getScreenInfo(peer: PeerDevice): ScreenInfo? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/screen-info", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                ScreenInfo(
+                    width = (dataMap["width"] as? Number)?.toInt() ?: 720,
+                    height = (dataMap["height"] as? Number)?.toInt() ?: 1280,
+                    captureActive = dataMap["captureActive"] as? Boolean ?: false,
+                    gestureActive = dataMap["gestureActive"] as? Boolean ?: false
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getScreenInfo failed", e)
+            null
+        }
+    }
+
+    suspend fun getScreenshot(peer: PeerDevice): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val url = URL("http://${peer.host}:${peer.port}/api/screenshot?token=$token")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 10000
+            if (token != null) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
+            val bitmap = android.graphics.BitmapFactory.decodeStream(conn.inputStream)
+            conn.disconnect()
+            bitmap
+        } catch (e: Exception) {
+            Log.e(tag, "getScreenshot failed", e)
+            null
+        }
+    }
+
+    suspend fun sendTouch(peer: PeerDevice, x: Float, y: Float, action: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/touch?x=$x&y=$y&action=${URLEncoder.encode(action, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "sendTouch failed", e)
+            false
+        }
+    }
+
+    suspend fun sendSwipe(peer: PeerDevice, startX: Float, startY: Float, dx: Float, dy: Float): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/swipe?startX=$startX&startY=$startY&dx=$dx&dy=$dy", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "sendSwipe failed", e)
+            false
+        }
+    }
+
     // ========================
     // HELPER METHODS
     // ========================
+
+    /**
+     * Get the cached API token for a peer device.
+     * Used by FilePreviewActivity for direct URL downloads.
+     */
+    fun getPeerToken(peer: PeerDevice): String {
+        val key = "${peer.host}:${peer.port}"
+        return peerTokens[key] ?: peer.token
+    }
 
     private fun formatStorageSize(bytes: Long): String {
         return when {

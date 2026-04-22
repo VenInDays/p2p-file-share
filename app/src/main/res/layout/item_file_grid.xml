@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="#FAFAFA"
+    android:layout_margin="4dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Thumbnail / Icon area -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="120dp">
+
+            <View
+                android:id="@+id/viewIconBgGrid"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_circle_icon" />
+
+            <ImageView
+                android:id="@+id/ivFileIconGrid"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_file"
+                android:scaleType="fitCenter"
+                android:contentDescription="File icon" />
+
+            <ImageView
+                android:id="@+id/ivThumbnailGrid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                android:contentDescription="Thumbnail" />
+
+            <ImageView
+                android:id="@+id/ivPlayOverlayGrid"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_play_circle"
+                android:visibility="gone"
+                android:contentDescription="Play" />
+
+            <ImageView
+                android:id="@+id/ivSelectionCheckGrid"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="8dp"
+                android:src="@drawable/ic_check"
+                android:visibility="gone"
+                android:contentDescription="Selected" />
+
+        </FrameLayout>
+
+        <!-- File name and size -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/tvFileNameGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#212121"
+                android:maxLines="2"
+                android:ellipsize="middle"
+                android:lineSpacingExtra="1dp" />
+
+            <TextView
+                android:id="@+id/tvFileSizeGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="10sp"
+                android:textColor="#9E9E9E"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
