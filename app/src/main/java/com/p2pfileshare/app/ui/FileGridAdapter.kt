@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -13,16 +14,16 @@ import com.p2pfileshare.app.model.FileItem
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class FileListAdapter(
+class FileGridAdapter(
     private val context: Context,
     private val onItemClick: (FileItem) -> Unit,
     private val onItemLongClick: (FileItem) -> Unit,
     private val onSelectionToggle: ((FileItem) -> Unit)? = null
-) : RecyclerView.Adapter<FileListAdapter.ViewHolder>() {
+) : RecyclerView.Adapter<FileGridAdapter.ViewHolder>() {
 
     private val items = mutableListOf<FileItem>()
     private val selectedItems = mutableSetOf<FileItem>()
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    private val dateFormat = SimpleDateFormat("MM/dd", Locale.getDefault())
 
     var isSelectionMode: Boolean = false
 
@@ -44,7 +45,7 @@ class FileListAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val view = LayoutInflater.from(context).inflate(R.layout.item_file, parent, false)
+        val view = LayoutInflater.from(context).inflate(R.layout.item_file_grid, parent, false)
         return ViewHolder(view)
     }
 
@@ -56,30 +57,32 @@ class FileListAdapter(
     override fun getItemCount() = items.size
 
     inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        private val icon: ImageView = view.findViewById(R.id.ivIcon)
-        private val name: TextView = view.findViewById(R.id.tvName)
-        private val details: TextView = view.findViewById(R.id.tvDetails)
-        private val size: TextView = view.findViewById(R.id.tvSize)
+        private val icon: ImageView = view.findViewById(R.id.ivFileIconGrid)
+        private val name: TextView = view.findViewById(R.id.tvFileNameGrid)
+        private val size: TextView = view.findViewById(R.id.tvFileSizeGrid)
+        private val iconBg: View = view.findViewById(R.id.viewIconBgGrid)
+        private val selectionCheck: ImageView = view.findViewById(R.id.ivSelectionCheckGrid)
 
         fun bind(item: FileItem) {
             name.text = item.name
 
             if (item.isDirectory) {
                 icon.setImageResource(R.drawable.ic_folder)
-                details.text = dateFormat.format(item.lastModified)
                 size.visibility = View.GONE
             } else {
                 icon.setImageResource(getIconForFile(item))
-                details.text = dateFormat.format(item.lastModified)
                 size.visibility = View.VISIBLE
                 size.text = formatFileSize(item.size)
             }
 
-            // Selection highlight
-            if (isSelectionMode && selectedItems.contains(item)) {
-                itemView.setBackgroundColor(Color.parseColor("#E3F2FD"))
+            // Selection state
+            val isSelected = selectedItems.contains(item)
+            selectionCheck.visibility = if (isSelectionMode && isSelected) View.VISIBLE else View.GONE
+            if (isSelectionMode && isSelected) {
+                (itemView as? com.google.android.material.card.MaterialCardView)?.setStrokeColor(Color.parseColor("#2196F3"))
+                (itemView as? com.google.android.material.card.MaterialCardView)?.strokeWidth = 2
             } else {
-                itemView.setBackgroundColor(Color.TRANSPARENT)
+                (itemView as? com.google.android.material.card.MaterialCardView)?.strokeWidth = 0
             }
 
             itemView.setOnClickListener {

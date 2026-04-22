@@ -17,7 +17,8 @@ data class FileItem(
 data class PeerDevice(
     @SerializedName("name") val name: String,
     @SerializedName("host") val host: String,
-    @SerializedName("port") val port: Int
+    @SerializedName("port") val port: Int,
+    @SerializedName("token") val token: String = ""
 ) : Serializable
 
 data class ApiResponse(
@@ -31,3 +32,19 @@ data class DirectoryInfo(
     @SerializedName("files") val files: List<FileItem>,
     @SerializedName("parent") val parent: String?
 )
+
+data class ZipEntryItem(
+    @SerializedName("name") val name: String,
+    @SerializedName("size") val size: Long,
+    @SerializedName("compressedSize") val compressedSize: Long,
+    @SerializedName("isDirectory") val isDirectory: Boolean,
+    @SerializedName("lastModified") val lastModified: Long
+) : Serializable
+
+data class ZipContent(
+    @SerializedName("name") val name: String,
+    @SerializedName("content") val content: String = "",
+    @SerializedName("size") val size: Long,
+    @SerializedName("type") val type: String,
+    @SerializedName("message") val message: String = ""
+) : Serializable

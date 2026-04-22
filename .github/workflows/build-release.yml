@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.6.0.apk"
+        FINAL_APK="P2PFileShare-v1.7.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.6.0.apk
+        path: P2PFileShare-v1.7.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.6.0-build${{ github.run_number }}"
+        TAG="v1.7.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,27 +126,33 @@ jobs:
 
         # Write release notes to file to avoid shell quoting issues
         cat > /tmp/notes.md << 'NOTES_EOF'
-        ## P2P File Share v1.6.0
+        ## P2P File Share v1.7.0
 
         ### Tinh nang moi
-        - **UDP Discovery** - Tu dong tim thay nhau bang UDP broadcast (khong can NSD/mDNS)
-        - **Hash bao mat** - Chi app nay moi tim duoc nhau (HMAC-SHA256 xac thuc)
-        - **Auto-discovery** - Tu dong cap nhat danh sach thiet bi, khong can nhat refresh
-        - **Remote FPS tang** - Tang FPS tu ~6-7 len ~15-20 FPS
-        - **Pre-compressed JPEG** - Server nen anh truoc, phuc vu nhanh hon 3x
+        - **UI Nang cap** - Giao dien Material Design 3 moi, hieu ung animation muot ma
+        - **Chinh sua anh muot** - Xu ly anh lon khong lag (Subsampling Scale ImageView)
+        - **Xem ZIP** - Duyet noi dung file ZIP truc tiep trong app
+        - **Bao mat tang cuong** - Ma hoa AES-256-GCM du lieu, API token xac thuc, rate limiting
+        - **Lock bao mat cao** - Lock chong crack, data ma hoa, terminal attack vo ich
+        - **API Authentication** - Chi thiet bi co app moi goi duoc API (HMAC-SHA256 token)
+        - **Anti-tampering** - Chong tamper, app van muot duoi tan cong
+        - **Rate Limiting** - Chong brute-force, chi cho phep 60 requests/phut/IP
 
         ### Cai tien
-        - Khong can nhat "Ket noi thu cong" nua - tu dong tim thay nhau
-        - Peer list tu cap nhat moi 3 giay
-        - Remote Control: giam do phan giai capture xuong 480x854 cho nhanh hon
-        - Remote Control: JPEG quality 30 cho file size nho, van doc duoc
-        - Adaptive frame interval: tu cham lai khi loi, nhanh len khi on dinh
+        - Image viewing: Subsampling Scale ImageView thay the load full bitmap
+        - ZIP viewer: liet ke, xem file trong ZIP khong can giai nen
+        - Security: AES-256-GCM encryption at rest cho du lieu nhay cam
+        - Security: HMAC-SHA256 token cho moi API request
+        - Security: Rate limiting chong brute-force (60 req/min/IP)
+        - Security: Lock mechanism chong terminal/external access
+        - Security: App signature verification chong tampering
+        - UI: Card-based layout, smooth animations, better icons
 
         ### Tinh nang cu
-        - Tu dong ket noi cung WiFi
-        - Truy cap file: Download/Edit/Delete/Upload/Create
+        - Tu dong ket noi cung WiFi (UDP Discovery + HMAC-SHA256)
+        - Truy cap file: Download/Edit/Delete/Upload/Create/Copy/Move
         - Lock This Phone - Chong truy cap tu thiet bi khac
-        - Remote Control - Dieu khien man hinh may khac realtime
+        - Remote Control - Dieu khien man hinh may khac realtime (~15-20 FPS)
         - Tu khoi dong khi bat may
 
         ### Ho tro Android 8.0+ (API 26)
@@ -162,6 +168,6 @@ jobs:
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.6.0.apk \
+          P2PFileShare-v1.7.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md

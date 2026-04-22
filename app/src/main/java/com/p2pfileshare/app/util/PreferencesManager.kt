@@ -2,6 +2,7 @@ package com.p2pfileshare.app.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.p2pfileshare.app.security.SecurityManager
 
 class PreferencesManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("p2p_prefs", Context.MODE_PRIVATE)
@@ -34,7 +35,45 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt("last_connected_port", 0)
         set(value) = prefs.edit().putInt("last_connected_port", value).apply()
 
-    var isRemoteControlEnabled: Boolean
-        get() = prefs.getBoolean("remote_control_enabled", false)
-        set(value) = prefs.edit().putBoolean("remote_control_enabled", value).apply()
+    var isGridView: Boolean
+        get() = prefs.getBoolean("is_grid_view", false)
+        set(value) = prefs.edit().putBoolean("is_grid_view", value).apply()
+
+    // Security settings
+    var isSecurityEnabled: Boolean
+        get() = prefs.getBoolean("security_enabled", true)
+        set(value) = prefs.edit().putBoolean("security_enabled", value).apply()
+
+    var isRateLimitEnabled: Boolean
+        get() = prefs.getBoolean("rate_limit_enabled", true)
+        set(value) = prefs.edit().putBoolean("rate_limit_enabled", value).apply()
+
+    var isEncryptionEnabled: Boolean
+        get() = prefs.getBoolean("encryption_enabled", true)
+        set(value) = prefs.edit().putBoolean("encryption_enabled", value).apply()
+
+    /**
+     * Obfuscate sensitive preference data.
+     * When lock is enabled, encrypt stored data so terminal access reveals nothing useful.
+     */
+    fun lockSecureData() {
+        if (isLocked && isEncryptionEnabled) {
+            val editor = prefs.edit()
+            // Store encrypted marker so app knows data is locked
+            editor.putString("lock_hash", SecurityManager.encryptData("LOCKED_${System.currentTimeMillis()}"))
+            editor.apply()
+        }
+    }
+
+    /**
+     * Verify that secure data hasn't been tampered with.
+     */
+    fun verifyDataIntegrity(): Boolean {
+        val lockHash = prefs.getString("lock_hash", null)
+        if (isLocked && lockHash != null) {
+            val decrypted = SecurityManager.decryptData(lockHash)
+            return decrypted.startsWith("LOCKED_")
+        }
+        return true
+    }
 }

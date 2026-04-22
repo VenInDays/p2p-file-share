@@ -5,6 +5,8 @@ import com.p2pfileshare.app.App
 import com.p2pfileshare.app.model.ApiResponse
 import com.p2pfileshare.app.model.DirectoryInfo
 import com.p2pfileshare.app.model.FileItem
+import com.p2pfileshare.app.model.ZipEntryItem
+import com.p2pfileshare.app.security.SecurityManager
 import com.p2pfileshare.app.util.PreferencesManager
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
@@ -17,6 +19,8 @@ import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
 class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(port) {
 
@@ -24,14 +28,27 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     override fun serve(session: IHTTPSession): Response {
-        // Check if locked
-        if (prefs.isLocked) {
-            return jsonError("This device is locked", Response.Status.FORBIDDEN)
-        }
-
         val uri = session.uri ?: "/"
         val method = session.method
         val params = session.parms
+        val clientIp = session.remoteIpAddress ?: "unknown"
+
+        // === SECURITY LAYER 1: Rate Limiting ===
+        if (!SecurityManager.checkRateLimit(clientIp)) {
+            return jsonError("Rate limit exceeded. Try again later.", Response.Status.TOO_MANY_REQUESTS)
+        }
+
+        // === SECURITY LAYER 2: API Token Authentication ===
+        // All /api/ endpoints require valid token except /api/info (for discovery)
+        val authToken = session.headers?.get("x-p2p-token") ?: params["token"]
+        if (uri != "/api/info" && !SecurityManager.validateApiToken(authToken)) {
+            return jsonError("Unauthorized. Invalid or missing API token.", Response.Status.UNAUTHORIZED)
+        }
+
+        // === SECURITY LAYER 3: Lock Check ===
+        if (prefs.isLocked && uri != "/api/info") {
+            return jsonError("This device is locked", Response.Status.FORBIDDEN)
+        }
 
         return try {
             when {
@@ -45,9 +62,12 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 uri == "/api/rename" && method == Method.POST -> handleRename(params)
                 uri == "/api/edit" && method == Method.POST -> handleEdit(session)
                 uri == "/api/file-info" -> handleFileInfo(params)
-                uri == "/api/screenshot" -> handleScreenshot()
-                uri == "/api/touch" && method == Method.POST -> handleTouch(params)
-                uri == "/api/screen-info" -> handleScreenInfo()
+                uri == "/api/copy" && method == Method.POST -> handleCopy(params)
+                uri == "/api/move" && method == Method.POST -> handleMove(params)
+                uri == "/api/storage-info" -> handleStorageInfo()
+                uri == "/api/search" -> handleSearch(params)
+                uri == "/api/zip-list" -> handleZipList(params)
+                uri == "/api/zip-entry" -> handleZipEntry(params)
                 else -> jsonError("Unknown endpoint: $uri", Response.Status.NOT_FOUND)
             }
         } catch (e: Exception) {
@@ -59,7 +79,9 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         val data = mapOf(
             "name" to prefs.serviceName,
             "port" to listeningPort,
-            "locked" to prefs.isLocked
+            "locked" to prefs.isLocked,
+            "version" to "1.7.0",
+            "token" to SecurityManager.getApiToken() // Share token so paired devices can authenticate
         )
         return jsonSuccess("OK", data)
     }
@@ -133,7 +155,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         val targetDir = if (targetPath == "/") File(App.getStorageRoot()) else File(targetPath)
 
         if (!targetDir.exists() || !targetDir.isDirectory) {
-            return jsonError("Target directory not found: $targetPath")
+            return jsonError("Target directory not found")
         }
 
         val uploadedFiles = mutableListOf<String>()
@@ -278,6 +300,335 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         return jsonSuccess("OK", info)
     }
 
+    // ========================
+    // ZIP VIEWER ENDPOINTS
+    // ========================
+
+    /**
+     * List contents of a ZIP file without extracting.
+     * Returns a list of ZipEntryItem with name, size, compressed size, and isDirectory.
+     */
+    private fun handleZipList(params: Map<String, String>): Response {
+        var path = params["path"] ?: return jsonError("Path is required")
+        path = URLDecoder.decode(path, "UTF-8")
+        val file = File(path)
+
+        if (!file.exists()) {
+            return jsonError("ZIP file not found")
+        }
+
+        if (!file.name.lowercase().endsWith(".zip")) {
+            return jsonError("Not a ZIP file")
+        }
+
+        try {
+            val entries = mutableListOf<ZipEntryItem>()
+            val zipFile = ZipFile(file)
+
+            zipFile.entries().asSequence().forEach { entry ->
+                entries.add(
+                    ZipEntryItem(
+                        name = entry.name,
+                        size = entry.size,
+                        compressedSize = entry.compressedSize,
+                        isDirectory = entry.isDirectory,
+                        lastModified = entry.lastModified.time
+                    )
+                )
+            }
+
+            zipFile.close()
+            return jsonSuccess("OK", entries)
+        } catch (e: Exception) {
+            return jsonError("Failed to read ZIP: ${e.message}")
+        }
+    }
+
+    /**
+     * Extract and return a single entry from a ZIP file.
+     * Used to view individual text files inside a ZIP.
+     */
+    private fun handleZipEntry(params: Map<String, String>): Response {
+        var path = params["path"] ?: return jsonError("ZIP path is required")
+        var entryName = params["entry"] ?: return jsonError("Entry name is required")
+        path = URLDecoder.decode(path, "UTF-8")
+        entryName = URLDecoder.decode(entryName, "UTF-8")
+
+        val file = File(path)
+        if (!file.exists()) {
+            return jsonError("ZIP file not found")
+        }
+
+        try {
+            val zipFile = ZipFile(file)
+            val entry = zipFile.getEntry(entryName)
+
+            if (entry == null) {
+                zipFile.close()
+                return jsonError("Entry not found: $entryName")
+            }
+
+            if (entry.isDirectory) {
+                zipFile.close()
+                return jsonError("Cannot read directory entry")
+            }
+
+            // Check if it's a text file
+            val entryLower = entryName.lowercase()
+            val isTextFile = entryLower.endsWith(".txt") || entryLower.endsWith(".log") ||
+                    entryLower.endsWith(".md") || entryLower.endsWith(".json") ||
+                    entryLower.endsWith(".xml") || entryLower.endsWith(".html") ||
+                    entryLower.endsWith(".css") || entryLower.endsWith(".js") ||
+                    entryLower.endsWith(".csv") || entryLower.endsWith(".properties") ||
+                    entryLower.endsWith(".yaml") || entryLower.endsWith(".yml") ||
+                    entryLower.endsWith(".ini") || entryLower.endsWith(".conf") ||
+                    entryLower.endsWith(".sh") || entryLower.endsWith(".bat")
+
+            val isImageFile = entryLower.endsWith(".jpg") || entryLower.endsWith(".jpeg") ||
+                    entryLower.endsWith(".png") || entryLower.endsWith(".gif") ||
+                    entryLower.endsWith(".webp") || entryLower.endsWith(".bmp")
+
+            val inputStream = zipFile.getInputStream(entry)
+            val bytes = inputStream.readBytes()
+            inputStream.close()
+            zipFile.close()
+
+            // Size limit: 2MB for text, 10MB for images
+            val maxSize = if (isTextFile) 2 * 1024 * 1024 else 10 * 1024 * 1024
+            if (bytes.size > maxSize) {
+                return jsonError("File too large to preview: ${bytes.size} bytes")
+            }
+
+            if (isTextFile) {
+                val content = String(bytes, Charsets.UTF_8)
+                val data = mapOf(
+                    "name" to entryName,
+                    "content" to content,
+                    "size" to bytes.size.toLong(),
+                    "type" to "text"
+                )
+                return jsonSuccess("OK", data)
+            } else if (isImageFile) {
+                // Return as binary with proper MIME type
+                val mimeType = when {
+                    entryLower.endsWith(".jpg") || entryLower.endsWith(".jpeg") -> "image/jpeg"
+                    entryLower.endsWith(".png") -> "image/png"
+                    entryLower.endsWith(".gif") -> "image/gif"
+                    entryLower.endsWith(".webp") -> "image/webp"
+                    else -> "image/bmp"
+                }
+                val bais = ByteArrayInputStream(bytes)
+                val response = newFixedLengthResponse(Response.Status.OK, mimeType, bais, bytes.size.toLong())
+                return response
+            } else {
+                // Return basic info for unsupported types
+                val data = mapOf(
+                    "name" to entryName,
+                    "size" to bytes.size.toLong(),
+                    "type" to "binary",
+                    "message" to "Preview not supported for this file type"
+                )
+                return jsonSuccess("OK", data)
+            }
+        } catch (e: Exception) {
+            return jsonError("Failed to read ZIP entry: ${e.message}")
+        }
+    }
+
+    // ========================
+    // COPY / MOVE / STORAGE / SEARCH
+    // ========================
+
+    private fun handleCopy(params: Map<String, String>): Response {
+        var src = params["src"] ?: return jsonError("Source path is required")
+        var dest = params["dest"] ?: return jsonError("Destination directory is required")
+        src = URLDecoder.decode(src, "UTF-8")
+        dest = URLDecoder.decode(dest, "UTF-8")
+
+        val srcFile = File(src)
+        if (!srcFile.exists()) {
+            return jsonError("Source not found: $src")
+        }
+
+        val destDir = File(dest)
+        if (!destDir.exists() || !destDir.isDirectory) {
+            return jsonError("Destination directory not found: $dest")
+        }
+
+        val targetFile = resolveUniqueDestination(destDir, srcFile.name)
+
+        val success = if (srcFile.isDirectory) {
+            copyDirectoryRecursive(srcFile, targetFile)
+        } else {
+            try {
+                srcFile.copyTo(targetFile)
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        return if (success) {
+            jsonSuccess("Copied", targetFile.absolutePath)
+        } else {
+            jsonError("Failed to copy")
+        }
+    }
+
+    private fun handleMove(params: Map<String, String>): Response {
+        var src = params["src"] ?: return jsonError("Source path is required")
+        var destDir = params["destDir"] ?: return jsonError("Destination directory is required")
+        src = URLDecoder.decode(src, "UTF-8")
+        destDir = URLDecoder.decode(destDir, "UTF-8")
+
+        val srcFile = File(src)
+        if (!srcFile.exists()) {
+            return jsonError("Source not found: $src")
+        }
+
+        val destDirFile = File(destDir)
+        if (!destDirFile.exists() || !destDirFile.isDirectory) {
+            return jsonError("Destination directory not found: $destDir")
+        }
+
+        val targetFile = resolveUniqueDestination(destDirFile, srcFile.name)
+
+        // Try renameTo first (works if same filesystem)
+        val renamed = srcFile.renameTo(targetFile)
+        if (renamed) {
+            return jsonSuccess("Moved", targetFile.absolutePath)
+        }
+
+        // Fallback: copy + delete
+        val copySuccess = if (srcFile.isDirectory) {
+            copyDirectoryRecursive(srcFile, targetFile)
+        } else {
+            try {
+                srcFile.copyTo(targetFile)
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        if (!copySuccess) {
+            return jsonError("Failed to move: copy failed")
+        }
+
+        val deleted = deleteRecursively(srcFile)
+        return if (deleted) {
+            jsonSuccess("Moved", targetFile.absolutePath)
+        } else {
+            jsonError("Moved (copy succeeded) but failed to delete source")
+        }
+    }
+
+    private fun handleStorageInfo(): Response {
+        val storageRoot = File(App.getStorageRoot())
+        val totalSpace = storageRoot.totalSpace
+        val freeSpace = storageRoot.freeSpace
+        val usableSpace = storageRoot.usableSpace
+        val usedSpace = totalSpace - usableSpace
+
+        val data = mapOf(
+            "totalBytes" to totalSpace,
+            "usedBytes" to usedSpace,
+            "freeBytes" to usableSpace
+        )
+        return jsonSuccess("OK", data)
+    }
+
+    private fun handleSearch(params: Map<String, String>): Response {
+        var path = params["path"] ?: "/"
+        val query = params["query"] ?: return jsonError("Query is required")
+        path = URLDecoder.decode(path, "UTF-8")
+
+        val rootDir = if (path == "/") File(App.getStorageRoot()) else File(path)
+        if (!rootDir.exists() || !rootDir.isDirectory) {
+            return jsonError("Directory not found: $path")
+        }
+
+        val results = mutableListOf<FileItem>()
+        searchRecursive(rootDir, query.lowercase(), results, maxDepth = 3, currentDepth = 0)
+        return jsonSuccess("OK", results)
+    }
+
+    // ========================
+    // HELPER METHODS
+    // ========================
+
+    private fun resolveUniqueDestination(destDir: File, name: String): File {
+        var target = File(destDir, name)
+        if (!target.exists()) return target
+
+        val baseName: String
+        val extension: String
+        val dotIndex = name.lastIndexOf('.')
+        if (dotIndex > 0 && !File(name).isDirectory) {
+            baseName = name.substring(0, dotIndex)
+            extension = name.substring(dotIndex)
+        } else {
+            baseName = name
+            extension = ""
+        }
+
+        var counter = 1
+        while (target.exists()) {
+            target = File(destDir, "$baseName ($counter)$extension")
+            counter++
+        }
+        return target
+    }
+
+    private fun copyDirectoryRecursive(src: File, dest: File): Boolean {
+        if (!dest.exists()) {
+            val created = dest.mkdirs()
+            if (!created) return false
+        }
+
+        val children = src.listFiles() ?: return true
+        for (child in children) {
+            val destChild = File(dest, child.name)
+            val success = if (child.isDirectory) {
+                copyDirectoryRecursive(child, destChild)
+            } else {
+                try {
+                    child.copyTo(destChild)
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            if (!success) return false
+        }
+        return true
+    }
+
+    private fun searchRecursive(dir: File, query: String, results: MutableList<FileItem>, maxDepth: Int, currentDepth: Int) {
+        if (currentDepth > maxDepth) return
+        val children = dir.listFiles() ?: return
+
+        for (child in children) {
+            if (child.name.lowercase().contains(query)) {
+                results.add(
+                    FileItem(
+                        name = child.name,
+                        path = child.absolutePath,
+                        isDirectory = child.isDirectory,
+                        size = if (child.isFile) child.length() else 0,
+                        lastModified = child.lastModified(),
+                        mimeType = getMimeType(child),
+                        readable = child.canRead(),
+                        writable = child.canWrite()
+                    )
+                )
+            }
+            if (child.isDirectory) {
+                searchRecursive(child, query, results, maxDepth, currentDepth + 1)
+            }
+        }
+    }
+
     private fun jsonSuccess(message: String, data: Any?): Response {
         val json = gson.toJson(ApiResponse(true, message, data))
         return newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json)
@@ -325,82 +676,6 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         java.util.zip.ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             zipRecursive(sourceDir, sourceDir.name, zos)
         }
-    }
-
-    private fun handleScreenshot(): Response {
-        if (prefs.isLocked) {
-            return jsonError("This device is locked", Response.Status.FORBIDDEN)
-        }
-        val capture = com.p2pfileshare.app.remote.ScreenCaptureManager.instance
-        if (capture == null || !capture.isCapturing()) {
-            return jsonError("Screen capture not active. Enable in Settings > Remote Control.")
-        }
-        try {
-            // Use pre-compressed JPEG bytes for instant serving (much faster than compressing each time)
-            val jpegBytes = capture.getLatestJpegBytes()
-            if (jpegBytes != null && jpegBytes.isNotEmpty()) {
-                val inputStream = java.io.ByteArrayInputStream(jpegBytes)
-                return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, jpegBytes.size.toLong())
-            }
-            // Fallback: compress from bitmap if pre-compressed not available
-            val bitmap = capture.getLatestBitmap()
-            if (bitmap != null) {
-                val stream = java.io.ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 30, stream)
-                val bytes = stream.toByteArray()
-                val inputStream = java.io.ByteArrayInputStream(bytes)
-                return newFixedLengthResponse(Response.Status.OK, "image/jpeg", inputStream, bytes.size.toLong())
-            }
-            return jsonError("No frame available yet")
-        } catch (e: Exception) {
-            return jsonError("Failed to capture screen: ${e.message}")
-        }
-    }
-
-    private fun handleTouch(params: Map<String, String>): Response {
-        if (prefs.isLocked) {
-            return jsonError("This device is locked", Response.Status.FORBIDDEN)
-        }
-        val xStr = params["x"] ?: return jsonError("x is required")
-        val yStr = params["y"] ?: return jsonError("y is required")
-        val action = params["action"] ?: "tap"
-        val x = xStr.toFloatOrNull() ?: return jsonError("Invalid x")
-        val y = yStr.toFloatOrNull() ?: return jsonError("Invalid y")
-
-        val gestureService = com.p2pfileshare.app.remote.RemoteGestureService.instance
-        if (gestureService == null) {
-            return jsonError("Gesture service not active. Enable Accessibility in Settings.")
-        }
-
-        val success = when (action) {
-            "tap" -> gestureService.dispatchTap(x, y)
-            "long_press" -> gestureService.dispatchLongPress(x, y)
-            "swipe" -> {
-                val dx = params["dx"]?.toFloatOrNull() ?: 0f
-                val dy = params["dy"]?.toFloatOrNull() ?: 0f
-                gestureService.dispatchSwipe(x, y, x + dx, y + dy)
-            }
-            else -> false
-        }
-
-        return if (success) jsonSuccess("Gesture dispatched", action) 
-               else jsonError("Failed to dispatch gesture")
-    }
-
-    private fun handleScreenInfo(): Response {
-        if (prefs.isLocked) {
-            return jsonError("This device is locked", Response.Status.FORBIDDEN)
-        }
-        val context = App.instance ?: return jsonError("App not initialized")
-        val display = context.resources.displayMetrics
-        val data = mapOf(
-            "width" to display.widthPixels,
-            "height" to display.heightPixels,
-            "density" to display.densityDpi,
-            "captureActive" to (com.p2pfileshare.app.remote.ScreenCaptureManager.instance?.isCapturing() == true),
-            "gestureActive" to (com.p2pfileshare.app.remote.RemoteGestureService.instance != null)
-        )
-        return jsonSuccess("OK", data)
     }
 
     private fun zipRecursive(file: File, basePath: String, zos: java.util.zip.ZipOutputStream) {

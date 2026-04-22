@@ -2,9 +2,13 @@ package com.p2pfileshare.app.util
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.p2pfileshare.app.model.ApiResponse
 import com.p2pfileshare.app.model.DirectoryInfo
+import com.p2pfileshare.app.model.FileItem
 import com.p2pfileshare.app.model.PeerDevice
+import com.p2pfileshare.app.model.ZipEntryItem
+import com.p2pfileshare.app.model.ZipContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -15,67 +19,62 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import java.net.URLEncoder
 
 class ApiClient {
     private val gson = Gson()
     private val tag = "ApiClient"
 
-    companion object {
-        /** Known text file extensions that can be edited */
-        val TEXT_EXTENSIONS = setOf(
-            ".txt", ".log", ".md", ".json", ".xml", ".html", ".htm", ".css", ".js",
-            ".csv", ".properties", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf",
-            ".sh", ".bat", ".ps1", ".py", ".java", ".kt", ".c", ".cpp", ".h",
-            ".hpp", ".cs", ".rb", ".php", ".pl", ".sql", ".gradle", ".gitignore",
-            ".dockerignore", ".env", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
-            ".scss", ".sass", ".less", ".rst", ".tex", ".svg", ".xaml", ".rs",
-            ".go", ".swift", ".dart", ".lua", ".r", ".m", ".mm"
-        )
+    // Cache peer tokens after discovery
+    private val peerTokens = mutableMapOf<String, String>()
 
-        val IMAGE_EXTENSIONS = setOf(
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"
-        )
-
-        val VIDEO_EXTENSIONS = setOf(
-            ".mp4", ".3gp", ".webm", ".mkv", ".avi", ".mov", ".flv", ".wmv"
-        )
-
-        val AUDIO_EXTENSIONS = setOf(
-            ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"
-        )
-
-        fun isTextFile(name: String): Boolean {
-            val lower = name.lowercase()
-            return TEXT_EXTENSIONS.any { lower.endsWith(it) }
+    /**
+     * Get the API token for a peer device.
+     * First call to /api/info retrieves and caches the token.
+     */
+    private suspend fun ensureToken(peer: PeerDevice): String? {
+        val key = "${peer.host}:${peer.port}"
+        if (peerTokens.containsKey(key)) {
+            return peerTokens[key]
         }
 
-        fun isImageFile(name: String): Boolean {
-            val lower = name.lowercase()
-            return IMAGE_EXTENSIONS.any { lower.endsWith(it) }
+        // If peer already has token, use it
+        if (peer.token.isNotEmpty()) {
+            peerTokens[key] = peer.token
+            return peer.token
         }
 
-        fun isVideoFile(name: String): Boolean {
-            val lower = name.lowercase()
-            return VIDEO_EXTENSIONS.any { lower.endsWith(it) }
-        }
-
-        fun isAudioFile(name: String): Boolean {
-            val lower = name.lowercase()
-            return AUDIO_EXTENSIONS.any { lower.endsWith(it) }
-        }
-
-        fun isPreviewable(name: String): Boolean {
-            return isImageFile(name) || isVideoFile(name)
+        // Fetch token from peer's /api/info endpoint
+        return try {
+            val json = httpGet("http://${peer.host}:${peer.port}/api/info")
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                val token = dataMap["token"] as? String ?: ""
+                if (token.isNotEmpty()) {
+                    peerTokens[key] = token
+                    token
+                } else null
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to get token from peer", e)
+            null
         }
     }
 
     suspend fun getInfo(peer: PeerDevice): ApiResponse? = withContext(Dispatchers.IO) {
         try {
             val json = httpGet("http://${peer.host}:${peer.port}/api/info")
-            gson.fromJson(json, ApiResponse::class.java)
+            // Also cache token from info response
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                val token = dataMap["token"] as? String ?: ""
+                if (token.isNotEmpty()) {
+                    peerTokens["${peer.host}:${peer.port}"] = token
+                }
+            }
+            response
         } catch (e: Exception) {
             Log.e(tag, "getInfo failed", e)
             null
@@ -84,8 +83,9 @@ class ApiClient {
 
     suspend fun listFiles(peer: PeerDevice, path: String = "/"): DirectoryInfo? = withContext(Dispatchers.IO) {
         try {
+            val token = ensureToken(peer)
             val encodedPath = URLEncoder.encode(path, "UTF-8")
-            val json = httpGet("http://${peer.host}:${peer.port}/api/list?path=$encodedPath")
+            val json = httpGet("http://${peer.host}:${peer.port}/api/list?path=$encodedPath", token)
             val response = gson.fromJson(json, ApiResponse::class.java)
             if (response.success && response.data != null) {
                 val dataJson = gson.toJson(response.data)
@@ -99,11 +99,15 @@ class ApiClient {
 
     suspend fun downloadFile(peer: PeerDevice, path: String, destDir: File): Boolean = withContext(Dispatchers.IO) {
         try {
+            val token = ensureToken(peer)
             val encodedPath = URLEncoder.encode(path, "UTF-8")
-            val url = URL("http://${peer.host}:${peer.port}/api/download?path=$encodedPath")
+            val url = URL("http://${peer.host}:${peer.port}/api/download?path=$encodedPath&token=$token")
             val conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 60000
+            if (token != null) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
 
             val sourceFile = File(path)
             val fileName = sourceFile.name
@@ -129,33 +133,9 @@ class ApiClient {
         }
     }
 
-    /** Download file to a specific target file (for preview caching) */
-    suspend fun downloadFileTo(peer: PeerDevice, path: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val encodedPath = URLEncoder.encode(path, "UTF-8")
-            val url = URL("http://${peer.host}:${peer.port}/api/download?path=$encodedPath")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 120000
-
-            conn.inputStream.use { input ->
-                FileOutputStream(destFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var len: Int
-                    while (input.read(buffer).also { len = it } > 0) {
-                        output.write(buffer, 0, len)
-                    }
-                }
-            }
-            true
-        } catch (e: Exception) {
-            Log.e(tag, "downloadFileTo failed", e)
-            false
-        }
-    }
-
     suspend fun uploadFile(peer: PeerDevice, file: File, targetPath: String): Boolean = withContext(Dispatchers.IO) {
         try {
+            val token = ensureToken(peer)
             val boundary = "----P2PBoundary${System.currentTimeMillis()}"
             val url = URL("http://${peer.host}:${peer.port}/api/upload?path=${URLEncoder.encode(targetPath, "UTF-8")}")
             val conn = url.openConnection() as HttpURLConnection
@@ -164,6 +144,9 @@ class ApiClient {
             conn.useCaches = false
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            if (token != null) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
             conn.connectTimeout = 10000
             conn.readTimeout = 120000
 
@@ -194,7 +177,8 @@ class ApiClient {
 
     suspend fun createFolder(peer: PeerDevice, path: String, name: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val json = httpGet("http://${peer.host}:${peer.port}/api/create-folder?path=${URLEncoder.encode(path, "UTF-8")}&name=${URLEncoder.encode(name, "UTF-8")}")
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/create-folder?path=${URLEncoder.encode(path, "UTF-8")}&name=${URLEncoder.encode(name, "UTF-8")}", token)
             val response = gson.fromJson(json, ApiResponse::class.java)
             response.success
         } catch (e: Exception) {
@@ -205,7 +189,8 @@ class ApiClient {
 
     suspend fun createFile(peer: PeerDevice, path: String, name: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val json = httpGet("http://${peer.host}:${peer.port}/api/create-file?path=${URLEncoder.encode(path, "UTF-8")}&name=${URLEncoder.encode(name, "UTF-8")}")
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/create-file?path=${URLEncoder.encode(path, "UTF-8")}&name=${URLEncoder.encode(name, "UTF-8")}", token)
             val response = gson.fromJson(json, ApiResponse::class.java)
             response.success
         } catch (e: Exception) {
@@ -216,11 +201,15 @@ class ApiClient {
 
     suspend fun deleteFile(peer: PeerDevice, path: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val url = URL("http://${peer.host}:${peer.port}/api/delete?path=${URLEncoder.encode(path, "UTF-8")}")
+            val token = ensureToken(peer)
+            val url = URL("http://${peer.host}:${peer.port}/api/delete?path=${URLEncoder.encode(path, "UTF-8")}&token=$token")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "DELETE"
             conn.connectTimeout = 10000
             conn.readTimeout = 30000
+            if (token != null) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
 
             val json = conn.inputStream.bufferedReader().readText()
             conn.disconnect()
@@ -234,7 +223,8 @@ class ApiClient {
 
     suspend fun renameFile(peer: PeerDevice, oldPath: String, newName: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val json = httpGet("http://${peer.host}:${peer.port}/api/rename?oldPath=${URLEncoder.encode(oldPath, "UTF-8")}&newName=${URLEncoder.encode(newName, "UTF-8")}")
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/rename?oldPath=${URLEncoder.encode(oldPath, "UTF-8")}&newName=${URLEncoder.encode(newName, "UTF-8")}", token)
             val response = gson.fromJson(json, ApiResponse::class.java)
             response.success
         } catch (e: Exception) {
@@ -245,12 +235,16 @@ class ApiClient {
 
     suspend fun editFile(peer: PeerDevice, path: String, content: String): Boolean = withContext(Dispatchers.IO) {
         try {
+            val token = ensureToken(peer)
             val boundary = "----P2PBoundary${System.currentTimeMillis()}"
             val url = URL("http://${peer.host}:${peer.port}/api/edit")
             val conn = url.openConnection() as HttpURLConnection
             conn.doOutput = true
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            if (token != null) {
+                conn.setRequestProperty("x-p2p-token", token)
+            }
             conn.connectTimeout = 10000
             conn.readTimeout = 30000
 
@@ -276,19 +270,118 @@ class ApiClient {
 
     suspend fun getFileContent(peer: PeerDevice, path: String): String? = withContext(Dispatchers.IO) {
         try {
+            val token = ensureToken(peer)
             val encodedPath = URLEncoder.encode(path, "UTF-8")
-            httpGet("http://${peer.host}:${peer.port}/api/download?path=$encodedPath")
+            httpGet("http://${peer.host}:${peer.port}/api/download?path=$encodedPath", token)
         } catch (e: Exception) {
             Log.e(tag, "getFileContent failed", e)
             null
         }
     }
 
-    private fun httpGet(urlStr: String): String {
+    suspend fun copyFile(peer: PeerDevice, sourcePath: String, destPath: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/copy?src=${URLEncoder.encode(sourcePath, "UTF-8")}&dest=${URLEncoder.encode(destPath, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "copyFile failed", e)
+            false
+        }
+    }
+
+    suspend fun moveFile(peer: PeerDevice, sourcePath: String, destPath: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/move?src=${URLEncoder.encode(sourcePath, "UTF-8")}&destDir=${URLEncoder.encode(destPath, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "moveFile failed", e)
+            false
+        }
+    }
+
+    suspend fun getStorageInfo(peer: PeerDevice): String? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/storage-info", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                val total = (dataMap["totalBytes"] as? Number)?.toLong() ?: 0L
+                val free = (dataMap["freeBytes"] as? Number)?.toLong() ?: 0L
+                val used = total - free
+                "${formatStorageSize(used)} / ${formatStorageSize(total)}"
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "getStorageInfo failed", e)
+            null
+        }
+    }
+
+    // ========================
+    // ZIP VIEWER API
+    // ========================
+
+    suspend fun listZipEntries(peer: PeerDevice, path: String): List<ZipEntryItem>? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val encodedPath = URLEncoder.encode(path, "UTF-8")
+            val json = httpGet("http://${peer.host}:${peer.port}/api/zip-list?path=$encodedPath", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataJson = gson.toJson(response.data)
+                val type = object : TypeToken<List<ZipEntryItem>>() {}.type
+                gson.fromJson(dataJson, type)
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "listZipEntries failed", e)
+            null
+        }
+    }
+
+    suspend fun getZipEntryContent(peer: PeerDevice, path: String, entry: String): ZipContent? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val encodedPath = URLEncoder.encode(path, "UTF-8")
+            val encodedEntry = URLEncoder.encode(entry, "UTF-8")
+            val json = httpGet("http://${peer.host}:${peer.port}/api/zip-entry?path=$encodedPath&entry=$encodedEntry", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataJson = gson.toJson(response.data)
+                gson.fromJson(dataJson, ZipContent::class.java)
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getZipEntryContent failed", e)
+            null
+        }
+    }
+
+    // ========================
+    // HELPER METHODS
+    // ========================
+
+    private fun formatStorageSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+            bytes < 1024L * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024))} MB"
+            else -> "${"%.1f".format(bytes / (1024.0 * 1024 * 1024))} GB"
+        }
+    }
+
+    private fun httpGet(urlStr: String, token: String? = null): String {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 30000
+        if (token != null) {
+            conn.setRequestProperty("x-p2p-token", token)
+        }
 
         val reader = BufferedReader(InputStreamReader(conn.inputStream))
         val response = StringBuilder()
@@ -299,96 +392,5 @@ class ApiClient {
         reader.close()
         conn.disconnect()
         return response.toString()
-    }
-
-    // ===== Remote Control API =====
-
-    data class ScreenInfo(
-        val width: Int = 720,
-        val height: Int = 1280,
-        val density: Int = 160,
-        val captureActive: Boolean = false,
-        val gestureActive: Boolean = false
-    )
-
-    suspend fun getScreenInfo(peer: PeerDevice): ScreenInfo? = withContext(Dispatchers.IO) {
-        try {
-            val json = httpGet("http://${peer.host}:${peer.port}/api/screen-info")
-            val response = gson.fromJson(json, ApiResponse::class.java)
-            if (response.success && response.data != null) {
-                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
-                ScreenInfo(
-                    width = (dataMap["width"] as? Double)?.toInt() ?: 720,
-                    height = (dataMap["height"] as? Double)?.toInt() ?: 1280,
-                    density = (dataMap["density"] as? Double)?.toInt() ?: 160,
-                    captureActive = dataMap["captureActive"] as? Boolean ?: false,
-                    gestureActive = dataMap["gestureActive"] as? Boolean ?: false
-                )
-            } else null
-        } catch (e: Exception) {
-            Log.e(tag, "getScreenInfo failed", e)
-            null
-        }
-    }
-
-    suspend fun getScreenshot(peer: PeerDevice): Bitmap? = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("http://${peer.host}:${peer.port}/api/screenshot")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 5000
-            conn.readTimeout = 8000
-
-            val inputStream = conn.inputStream
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            conn.disconnect()
-            bitmap
-        } catch (e: Exception) {
-            Log.e(tag, "getScreenshot failed", e)
-            null
-        }
-    }
-
-    suspend fun sendTouch(peer: PeerDevice, x: Float, y: Float, action: String = "tap"): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("http://${peer.host}:${peer.port}/api/touch?x=$x&y=$y&action=${URLEncoder.encode(action, "UTF-8")}")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.doOutput = true
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 5000
-
-            // Write empty body for POST
-            conn.outputStream.write(ByteArray(0))
-            conn.outputStream.flush()
-
-            val responseCode = conn.responseCode
-            conn.disconnect()
-            responseCode == 200
-        } catch (e: Exception) {
-            Log.e(tag, "sendTouch failed", e)
-            false
-        }
-    }
-
-    suspend fun sendSwipe(peer: PeerDevice, x: Float, y: Float, dx: Float, dy: Float): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("http://${peer.host}:${peer.port}/api/touch?x=$x&y=$y&action=swipe&dx=$dx&dy=$dy")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.doOutput = true
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 5000
-
-            conn.outputStream.write(ByteArray(0))
-            conn.outputStream.flush()
-
-            val responseCode = conn.responseCode
-            conn.disconnect()
-            responseCode == 200
-        } catch (e: Exception) {
-            Log.e(tag, "sendSwipe failed", e)
-            false
-        }
     }
 }

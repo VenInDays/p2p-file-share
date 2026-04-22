@@ -5,6 +5,7 @@ import android.net.wifi.WifiManager
 import android.os.Environment
 import android.text.format.Formatter
 import android.util.Log
+import com.p2pfileshare.app.security.SecurityManager
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -16,6 +17,21 @@ class App : Application() {
             instance = this
             val root = getStorageRoot()
             Log.d("App", "Storage root: $root")
+
+            // Initialize security manager (AES-256, API tokens, rate limiting)
+            SecurityManager.initialize(this)
+            Log.d("App", "SecurityManager initialized")
+
+            // Periodic cleanup of rate limit entries (every 5 minutes)
+            val cleanupHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            val cleanupRunnable = object : Runnable {
+                override fun run() {
+                    SecurityManager.cleanupRateLimits()
+                    cleanupHandler.postDelayed(this, 5 * 60 * 1000L)
+                }
+            }
+            cleanupHandler.postDelayed(cleanupRunnable, 5 * 60 * 1000L)
+
         } catch (e: Exception) {
             Log.e("App", "Error initializing app", e)
         }
@@ -40,14 +56,9 @@ class App : Application() {
             }
         }
 
-        /**
-         * Get the current WiFi IP address of this device.
-         * Falls back to checking all network interfaces if WifiManager fails.
-         */
         fun getWifiIpAddress(): String {
             val ctx = instance ?: return "Unknown"
 
-            // Method 1: Try WifiManager first
             try {
                 val wifiManager = ctx.applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager
                 val ip = wifiManager?.connectionInfo?.ipAddress ?: 0
@@ -59,11 +70,9 @@ class App : Application() {
                 Log.e("App", "WifiManager IP lookup failed", e)
             }
 
-            // Method 2: Iterate network interfaces
             try {
                 val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "Unknown"
                 for (intf in interfaces) {
-                    // Skip non-WiFi interfaces (like mobile data, VPN, etc.)
                     val name = intf.name.lowercase()
                     if (!name.startsWith("wlan") && !name.startsWith("eth") && !name.startsWith("rmnet")) {
                         continue
@@ -78,14 +87,12 @@ class App : Application() {
                 Log.e("App", "NetworkInterface IP lookup failed", e)
             }
 
-            // Method 3: Last resort - check all interfaces
             try {
                 val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "Unknown"
                 for (intf in interfaces) {
                     for (addr in intf.inetAddresses) {
                         if (addr is Inet4Address && !addr.isLoopbackAddress) {
                             val ip = addr.hostAddress ?: continue
-                            // Prefer 192.168.x.x or 10.0.x.x (typical WiFi ranges)
                             if (ip.startsWith("192.168.") || ip.startsWith("10.0.") || ip.startsWith("172.")) {
                                 return ip
                             }
