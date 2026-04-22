@@ -1,6 +1,5 @@
 package com.p2pfileshare.app.server
 
-import android.text.TextUtils
 import com.google.gson.Gson
 import com.p2pfileshare.app.App
 import com.p2pfileshare.app.model.ApiResponse

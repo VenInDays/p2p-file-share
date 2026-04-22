@@ -3,10 +3,11 @@ package com.p2pfileshare.app.ui
 import android.os.Bundle
 import android.widget.CompoundButton
 import android.widget.EditText
-import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.p2pfileshare.app.R
 import com.p2pfileshare.app.service.P2PService
 import com.p2pfileshare.app.util.PreferencesManager
@@ -15,9 +16,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var prefs: PreferencesManager
 
-    private lateinit var switchLock: Switch
-    private lateinit var switchAutoStart: Switch
-    private lateinit var tvDeviceName: androidx.appcompat.widget.AppCompatTextView
+    private lateinit var switchLock: SwitchMaterial
+    private lateinit var switchAutoStart: SwitchMaterial
+    private lateinit var tvDeviceName: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

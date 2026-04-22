@@ -5,12 +5,22 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+  checks: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -45,42 +55,41 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Release APK (signed by Gradle)
+    - name: Build Release APK
       run: ./gradlew assembleRelease
 
-    - name: Upload APK as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: signed-apk
-        path: app/build/outputs/apk/release/*.apk
-
-    - name: Verify and Re-sign APK with v1+v2+v3
+    - name: Re-sign APK with v1+v2+v3
       id: sign
       run: |
         APK_DIR="app/build/outputs/apk/release"
-        echo "Contents of APK directory:"
+        echo "=== APK Directory Contents ==="
         ls -la ${APK_DIR}/
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.0.0.apk"
+        FINAL_APK="P2PFileShare-v1.1.0.apk"
+        ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
         echo "Using build-tools: $BUILD_TOOLS"
 
         if [ -f "${SIGNED_BY_GRADLE}" ]; then
           INPUT_APK="${SIGNED_BY_GRADLE}"
+          echo "Using Gradle-signed APK"
         elif [ -f "${UNSIGNED_APK}" ]; then
           INPUT_APK="${UNSIGNED_APK}"
+          echo "Using unsigned APK"
         else
           echo "ERROR: No APK found!"
           exit 1
         fi
 
         # Align
-        ${BUILD_TOOLS}/zipalign -f 4 ${INPUT_APK} ${APK_DIR}/app-aligned.apk
+        echo "Aligning APK..."
+        ${BUILD_TOOLS}/zipalign -f 4 ${INPUT_APK} ${ALIGNED_APK}
 
         # Sign with v1+v2+v3
+        echo "Signing with v1+v2+v3..."
         ${BUILD_TOOLS}/apksigner sign \
           --ks release.jks \
           --ks-key-alias p2pfileshare \
@@ -90,73 +99,61 @@ jobs:
           --v2-signing-enabled true \
           --v3-signing-enabled true \
           --out ${FINAL_APK} \
-          ${APK_DIR}/app-aligned.apk
+          ${ALIGNED_APK}
 
-        echo "Verifying final signature..."
+        echo "=== Verifying signature ==="
         ${BUILD_TOOLS}/apksigner verify -v ${FINAL_APK}
-        ls -la ${FINAL_APK}
-
-        # Set output
-        echo "apk_path=${FINAL_APK}" >> $GITHUB_OUTPUT
+        echo "=== APK Info ==="
+        ls -lh ${FINAL_APK}
 
     - name: Upload signed APK as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: final-signed-apk
-        path: P2PFileShare-v1.0.0.apk
+        name: P2PFileShare-APK
+        path: P2PFileShare-v1.1.0.apk
 
-    - name: Create GitHub Release with APK
+    - name: Create GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.0.0-build${{ github.run_number }}"
-        echo "Creating release with tag: $TAG"
+        TAG="v1.1.0-build${{ github.run_number }}"
+        echo "Creating release: $TAG"
 
-        # Create tag
-        git tag $TAG
-        git push origin $TAG
+        # Delete existing release/tag if exists (for rebuilds)
+        gh release delete "$TAG" --yes || true
+        git tag -d "$TAG" || true
+        git push origin ":refs/tags/$TAG" || true
 
-        # Create release via API
-        RESPONSE=$(curl -s -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.repository }}/releases" \
-          -d "{
-            \"tag_name\": \"$TAG\",
-            \"name\": \"P2P File Share $TAG\",
-            \"body\": \"## P2P File Share\\n\\nAPK signed with v1 + v2 + v3\\n\\n### Features\\n- Auto-discover devices on same WiFi\\n- Browse/download/upload/edit/delete/rename files\\n- Create folders and files\\n- Lock This Phone feature\\n- Auto-start on boot, foreground service\\n\",
-            \"draft\": false,
-            \"prerelease\": false
-          }")
+        # Create release using gh CLI (most reliable method)
+        gh release create "$TAG" \
+          P2PFileShare-v1.1.0.apk \
+          --title "P2P File Share $TAG" \
+          --notes "## P2P File Share
 
-        UPLOAD_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('upload_url',''))")
-        echo "Upload URL: $UPLOAD_URL"
+        🔗 **Tự động kết nối cùng WiFi**
+        📁 **Truy cập file: Download/Edit/Delete/Upload/Create**
+        🔒 **Lock This Phone - Chống truy cập từ thiết bị khác**
+        🔄 **Tự khởi động khi bật máy**
 
-        if [ -z "$UPLOAD_URL" ]; then
-          echo "Failed to create release, response:"
-          echo "$RESPONSE"
-          exit 1
-        fi
+        ### Hỗ trợ Android 8.0 (API 26) trở lên
 
-        # Upload APK asset
-        CLEAN_URL="${UPLOAD_URL%\{?name,label\}}"
-        echo "Uploading APK to: ${CLEAN_URL}?name=P2PFileShare-v1.0.0.apk"
+        ### Cài đặt
+        1. Tải APK về 2 máy
+        2. Cài đặt APK (cho phép cài từ nguồn không xác định)
+        3. Mở app, cấp tất cả quyền (quan trọng!)
+        4. Kết nối cùng WiFi → Tự tìm thấy nhau
+        5. Chạm vào thiết bị để duyệt file
 
-        curl -s -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Content-Type: application/vnd.android.package-archive" \
-          --data-binary @P2PFileShare-v1.0.0.apk \
-          "${CLEAN_URL}?name=P2PFileShare-v1.0.0.apk" \
-          | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'Uploaded: {d.get(\"name\",\"FAILED\")}, Size: {d.get(\"size\",0)}')"
+        ### Tính năng
+        - Tự động phát hiện thiết bị cùng WiFi (NSD/mDNS)
+        - Duyệt file/thư mục trên máy khác
+        - Tải file về máy mình
+        - Upload file lên máy khác
+        - Tạo thư mục/file mới
+        - Đổi tên file
+        - Xóa file/thư mục
+        - Chỉnh sửa file văn bản
+        - Khóa máy này - Chặn người khác truy cập
+        - Tự chạy nền, tự khởi động khi bật máy
 
-    - name: Verify Release
-      run: |
-        sleep 5
-        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
-          python3 -c "
-        import json,sys
-        d=json.load(sys.stdin)
-        print(f'Release: {d.get(\"tag_name\",\"N/A\")}')
-        for a in d.get('assets',[]):
-            print(f'  Asset: {a[\"name\"]}, Size: {a[\"size\"]}, URL: {a[\"browser_download_url\"]}')
-        "
+        **APK signed with v1 + v2 + v3**"

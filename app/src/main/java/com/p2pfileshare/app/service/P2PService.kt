@@ -42,10 +42,24 @@ class P2PService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, P2PService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.e("P2PService", "Failed to start service", e)
+                // Retry once
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                } catch (e2: Exception) {
+                    Log.e("P2PService", "Failed to start service on retry", e2)
+                }
             }
         }
 
@@ -76,12 +90,19 @@ class P2PService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(App.NOTIFICATION_ID, buildNotification("P2P File Share đang chạy"))
+        // IMPORTANT: Must call startForeground immediately on Android 8+
+        // otherwise app crashes with ForegroundServiceDidNotStartInTimeException
+        val notification = buildNotification("P2P File Share đang chạy")
+        startForegroundCompat(App.NOTIFICATION_ID, notification)
 
         scope.launch {
-            startServer()
-            registerService()
-            startDiscovery()
+            try {
+                startServer()
+                registerService()
+                startDiscovery()
+            } catch (e: Exception) {
+                Log.e(tag, "Error in service startup", e)
+            }
         }
 
         return START_STICKY
@@ -100,15 +121,43 @@ class P2PService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Restart service when app is swiped away
         val restartIntent = Intent(this, P2PService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(restartIntent)
-        } else {
-            startService(restartIntent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent)
+            } else {
+                startService(restartIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to restart service after task removed", e)
         }
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * Compatibility wrapper for startForeground() that works on all Android versions.
+     * On Android 8+ (API 26+), we must show a notification with a channel.
+     * On older versions, we use the deprecated Notification constructor.
+     */
+    private fun startForegroundCompat(id: Int, notification: Notification) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10+ (API 29+): Can specify foreground service type
+                // Use 0 for no specific type (general purpose)
+                startForeground(id, notification, 0)
+            } else {
+                startForeground(id, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "startForeground failed, trying fallback", e)
+            try {
+                startForeground(id, notification)
+            } catch (e2: Exception) {
+                Log.e(tag, "startForeground fallback also failed", e2)
+            }
+        }
+    }
 
     private fun startServer() {
         try {
@@ -116,11 +165,11 @@ class P2PService : Service() {
             fileServer = FileServer(port, prefs).also { server ->
                 server.start()
             }
-            Log.d(tag, "Server started on port $port")
+            Log.d(tag, "Server started on port ${fileServer?.listeningPort}")
             updateNotification("Đang chia sẻ trên port ${fileServer?.listeningPort}")
         } catch (e: Exception) {
-            Log.e(tag, "Failed to start server", e)
-            // Try alternative port
+            Log.e(tag, "Failed to start server on port ${prefs.serverPort}", e)
+            // Try with port 0 (auto-assign)
             try {
                 fileServer = FileServer(0, prefs).also { server ->
                     server.start()
@@ -129,6 +178,7 @@ class P2PService : Service() {
                 updateNotification("Đang chia sẻ trên port ${fileServer?.listeningPort}")
             } catch (e2: Exception) {
                 Log.e(tag, "Failed to start server on alternative port", e2)
+                updateNotification("Lỗi khởi động server")
             }
         }
     }
@@ -168,7 +218,7 @@ class P2PService : Service() {
 
             nsdManager?.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (e: Exception) {
-            Log.e(tag, "Failed to register service", e)
+            Log.e(tag, "Failed to register NSD service", e)
         }
     }
 
@@ -266,6 +316,7 @@ class P2PService : Service() {
             ).apply {
                 description = "P2P File Share service notification"
                 setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -274,31 +325,30 @@ class P2PService : Service() {
 
     private fun buildNotification(text: String): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, App.CHANNEL_ID)
-                .setContentTitle("P2P File Share")
-                .setContentText(text)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("P2P File Share")
-                .setContentText(text)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build()
+                .setPriority(Notification.PRIORITY_LOW)
         }
+
+        return builder
+            .setContentTitle("P2P File Share")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .build()
     }
 
     private fun updateNotification(text: String) {
