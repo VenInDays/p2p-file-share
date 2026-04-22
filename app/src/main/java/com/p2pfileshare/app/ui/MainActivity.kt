@@ -16,7 +16,6 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
-import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -342,7 +341,7 @@ class MainActivity : AppCompatActivity() {
         val modalIcon: ImageView = view.findViewById(R.id.modalIcon)
         val modalFileName: TextView = view.findViewById(R.id.modalFileName)
         val modalFileDetails: TextView = view.findViewById(R.id.modalFileDetails)
-        val gridOptions: ViewGroup = view.findViewById(R.id.gridOptions)
+        val optionsContainer: LinearLayout = view.findViewById(R.id.optionsContainer)
 
         // Set header info
         modalFileName.text = file.name
@@ -357,29 +356,7 @@ class MainActivity : AppCompatActivity() {
 
         // Build options
         val options = buildFileOptions(file)
-        gridOptions.columnCount = options.size.coerceAtMost(4)
-
-        for (option in options) {
-            val optionView = LayoutInflater.from(this).inflate(R.layout.item_modal_option, gridOptions, false)
-            val optionIcon: ImageView = optionView.findViewById(R.id.optionIcon)
-            val optionLabel: TextView = optionView.findViewById(R.id.optionLabel)
-
-            optionIcon.setImageResource(option.icon)
-            optionIcon.imageTintList = ContextCompat.getColorStateList(this, option.tintColor)
-            optionLabel.text = option.label
-
-            optionView.setOnClickListener {
-                bottomSheet.dismiss()
-                option.action()
-            }
-
-            val params = optionView.layoutParams as GridLayout.LayoutParams
-            params.width = 0
-            params.columnWeight = 1f
-            optionView.layoutParams = params
-
-            gridOptions.addView(optionView)
-        }
+        populateModalOptions(optionsContainer, options, bottomSheet)
 
         bottomSheet.show()
     }
@@ -428,7 +405,7 @@ class MainActivity : AppCompatActivity() {
         val modalIcon: ImageView = view.findViewById(R.id.modalIcon)
         val modalFileName: TextView = view.findViewById(R.id.modalFileName)
         val modalFileDetails: TextView = view.findViewById(R.id.modalFileDetails)
-        val gridOptions: ViewGroup = view.findViewById(R.id.gridOptions)
+        val optionsContainer: LinearLayout = view.findViewById(R.id.optionsContainer)
 
         modalFileName.text = "Tạo mới"
         modalFileDetails.text = "Chọn thao tác"
@@ -440,10 +417,18 @@ class MainActivity : AppCompatActivity() {
             FileOption(R.drawable.ic_upload, "Tải lên", R.color.colorPrimary) { openFilePicker() }
         )
 
-        gridOptions.columnCount = options.size
+        populateModalOptions(optionsContainer, options, bottomSheet)
 
+        bottomSheet.show()
+    }
+
+    private fun populateModalOptions(
+        container: LinearLayout,
+        options: List<FileOption>,
+        bottomSheet: BottomSheetDialog
+    ) {
         for (option in options) {
-            val optionView = LayoutInflater.from(this).inflate(R.layout.item_modal_option, gridOptions, false)
+            val optionView = LayoutInflater.from(this).inflate(R.layout.item_modal_option, container, false)
             val optionIcon: ImageView = optionView.findViewById(R.id.optionIcon)
             val optionLabel: TextView = optionView.findViewById(R.id.optionLabel)
 
@@ -456,15 +441,16 @@ class MainActivity : AppCompatActivity() {
                 option.action()
             }
 
-            val params = optionView.layoutParams as GridLayout.LayoutParams
-            params.width = 0
-            params.columnWeight = 1f
+            // Use weight for even distribution
+            val params = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
             optionView.layoutParams = params
 
-            gridOptions.addView(optionView)
+            container.addView(optionView)
         }
-
-        bottomSheet.show()
     }
 
     // ===== File Operations =====

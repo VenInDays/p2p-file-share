@@ -56,15 +56,19 @@
         android:layout_height="1dp"
         android:background="#E0E0E0" />
 
-    <!-- Grid options -->
-    <GridLayout
-        android:id="@+id/gridOptions"
+    <!-- Options container - horizontal LinearLayout -->
+    <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:columnCount="4"
-        android:rowCount="1"
-        android:padding="8dp"
-        android:useDefaultMargins="true"
-        android:alignmentMode="alignBounds" />
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/optionsContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp" />
+
+    </HorizontalScrollView>
 
 </LinearLayout>
