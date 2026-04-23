@@ -142,7 +142,7 @@ class FilePreviewActivity : AppCompatActivity() {
                     progressBar?.visibility = View.GONE
                     if (tempFile != null && tempFile.exists()) {
                         // Use SubsamplingScaleImageView for efficient rendering
-                        subsamplingImageView?.setImage(android.net.Uri.fromFile(tempFile))
+                        subsamplingImageView?.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(android.net.Uri.fromFile(tempFile)))
                         subsamplingImageView?.visibility = View.VISIBLE
                     } else {
                         // Fallback to regular ImageView with Coil for smaller images
