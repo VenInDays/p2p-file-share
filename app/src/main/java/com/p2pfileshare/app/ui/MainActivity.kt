@@ -106,7 +106,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var btnSelectionClose: ImageButton
     private lateinit var tvSelectionCount: TextView
-    private lateinit var btnSelectAll: ImageButton
+    private lateinit var btnSelectAll: TextView
     private lateinit var btnBatchDownload: ImageButton
     private lateinit var btnBatchCopy: ImageButton
     private lateinit var btnBatchMove: ImageButton
