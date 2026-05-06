@@ -21,7 +21,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 
@@ -73,10 +75,10 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 uri == "/api/zip-entry" -> handleZipEntry(params)
                 // App management
                 uri == "/api/apps" -> handleListApps(params)
-                uri == "/api/uninstall-app" && method == Method.POST -> handleUninstallApp(params)
+                uri == "/api/uninstall-app" -> handleUninstallApp(params)
                 // WiFi control
                 uri == "/api/wifi-status" -> handleWifiStatus()
-                uri == "/api/wifi-control" && method == Method.POST -> handleWifiControl(params)
+                uri == "/api/wifi-control" -> handleWifiControl(params)
                 uri == "/api/network-stats" -> handleNetworkStats()
                 else -> jsonError("Unknown endpoint: $uri", Response.Status.NOT_FOUND)
             }
@@ -577,12 +579,8 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             val ctx = App.instance ?: return jsonError("App context not available")
             val pm = ctx.packageManager
 
-            val apps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                pm.getInstalledApplications(0)
-            }
+            @Suppress("DEPRECATION")
+            val apps = pm.getInstalledApplications(0)
 
             val filteredApps = apps.filter { appInfo ->
                 when (type) {
@@ -694,8 +692,8 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 val ssid = wifiInfo.ssid?.removeSurrounding(""") ?: "Unknown"
                 data["ssid"] = ssid
                 data["linkSpeed"] = wifiInfo.linkSpeed  // Mbps
+                @Suppress("DEPRECATION")
                 data["frequency"] = if (android.os.Build.VERSION.SDK_INT >= 21) {
-                    @Suppress("DEPRECATION")
                     wifiInfo.frequency  // MHz
                 } else 0
                 data["signalStrength"] = wifiInfo.rssi  // dBm
@@ -839,7 +837,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
     // WIFI CONTROL HELPERS
     // ========================
 
-    private fun getNetworkStats(ctx: android.content.Context): Map<String, Any> {
+    private fun getNetworkStats(ctx: Context): Map<String, Any> {
         val stats = mutableMapOf<String, Any>()
         try {
             // Get total bytes since device boot
@@ -860,14 +858,10 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         return stats
     }
 
-    private fun getPerAppNetworkUsage(ctx: android.content.Context): List<Map<String, Any>> {
+    private fun getPerAppNetworkUsage(ctx: Context): List<Map<String, Any>> {
         val pm = ctx.packageManager
-        val apps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getInstalledApplications(0)
-        }
+        @Suppress("DEPRECATION")
+        val apps = pm.getInstalledApplications(0)
 
         return apps.filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
             .mapNotNull { appInfo ->
@@ -893,7 +887,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             .take(50)  // Top 50 apps by usage
     }
 
-    private fun getAppUid(ctx: android.content.Context, packageName: String): Int {
+    private fun getAppUid(ctx: Context, packageName: String): Int {
         return try {
             ctx.packageManager.getApplicationInfo(packageName, 0).uid
         } catch (e: Exception) {
@@ -918,7 +912,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
     private fun saveAppWifiRestriction(packageName: String, limitKbps: Int) {
         try {
             val ctx = App.instance ?: return
-            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", Context.MODE_PRIVATE)
             prefs.edit().putInt("limit_$packageName", limitKbps).apply()
         } catch (_: Exception) {}
     }
@@ -926,7 +920,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
     private fun removeAppWifiRestriction(packageName: String) {
         try {
             val ctx = App.instance ?: return
-            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", Context.MODE_PRIVATE)
             prefs.edit().remove("limit_$packageName").apply()
         } catch (_: Exception) {}
     }
@@ -935,7 +929,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         val result = mutableListOf<Map<String, Any>>()
         try {
             val ctx = App.instance ?: return result
-            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", Context.MODE_PRIVATE)
             val pm = ctx.packageManager
             for ((key, value) in prefs.all) {
                 if (key.startsWith("limit_")) {
