@@ -731,13 +731,13 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                     val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
                     @Suppress("DEPRECATION")
                     wifiManager?.isWifiEnabled = true
-                    return jsonSuccess("WiFi enabled")
+                    return jsonSuccess("WiFi enabled", null)
                 }
                 "disable" -> {
                     val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
                     @Suppress("DEPRECATION")
                     wifiManager?.isWifiEnabled = false
-                    return jsonSuccess("WiFi disabled")
+                    return jsonSuccess("WiFi disabled", null)
                 }
                 "restrict_app" -> {
                     val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required for restrict_app"), "UTF-8")
@@ -787,10 +787,10 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                         )
                         process.waitFor()
                         removeAppWifiRestriction(packageName)
-                        return jsonSuccess("App $packageName WiFi restriction removed")
+                        return jsonSuccess("App $packageName WiFi restriction removed", null)
                     } catch (e: Exception) {
                         removeAppWifiRestriction(packageName)
-                        return jsonSuccess("App restriction removed from preferences")
+                        return jsonSuccess("App restriction removed from preferences", null)
                     }
                 }
                 "list_restricted" -> {
