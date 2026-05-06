@@ -617,8 +617,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
      */
     private fun handleUninstallApp(params: Map<String, String>): Response {
         try {
-            var packageName = params["package"] ?: return jsonError("Package name is required")
-            packageName = URLDecoder.decode(packageName, "UTF-8")
+            val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name is required"), "UTF-8")
             val silent = params["silent"]?.toBoolean() ?: false
 
             // Prevent uninstalling our own app
@@ -679,17 +678,19 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             val ctx = App.instance ?: return jsonError("App context not available")
             val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
 
+            @Suppress("DEPRECATION")
             val wifiInfo = wifiManager?.connectionInfo
             val isConnected = wifiInfo != null && wifiInfo.networkId != -1
 
             val data = mutableMapOf<String, Any>()
+            @Suppress("DEPRECATION")
             data["wifiEnabled"] = (wifiManager?.isWifiEnabled ?: false)
             data["connected"] = isConnected
             data["ipAddress"] = App.getWifiIpAddress()
 
             if (isConnected && wifiInfo != null) {
                 @Suppress("DEPRECATION")
-                val ssid = wifiInfo.ssid?.removeSurrounding(""") ?: "Unknown"
+                val ssid = wifiInfo.ssid?.removeSurrounding("\"") ?: "Unknown"
                 data["ssid"] = ssid
                 data["linkSpeed"] = wifiInfo.linkSpeed  // Mbps
                 @Suppress("DEPRECATION")
@@ -722,8 +723,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
      */
     private fun handleWifiControl(params: Map<String, String>): Response {
         try {
-            var action = params["action"] ?: return jsonError("Action is required")
-            action = URLDecoder.decode(action, "UTF-8")
+            val action = URLDecoder.decode(params["action"] ?: return jsonError("Action is required"), "UTF-8")
             val ctx = App.instance ?: return jsonError("App context not available")
 
             when (action) {
@@ -740,8 +740,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                     return jsonSuccess("WiFi disabled")
                 }
                 "restrict_app" -> {
-                    var packageName = params["package"] ?: return jsonError("Package name required for restrict_app")
-                    packageName = URLDecoder.decode(packageName, "UTF-8")
+                    val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required for restrict_app"), "UTF-8")
 
                     // Prevent restricting our own app
                     if (packageName == "com.p2pfileshare.app") {
@@ -780,8 +779,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                     }
                 }
                 "unrestrict_app" -> {
-                    var packageName = params["package"] ?: return jsonError("Package name required")
-                    packageName = URLDecoder.decode(packageName, "UTF-8")
+                    val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required"), "UTF-8")
                     try {
                         val uid = getAppUid(ctx, packageName)
                         val process = Runtime.getRuntime().exec(

@@ -1611,8 +1611,7 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Xác nhận gỡ app")
-                        .setMessage("Bạn có chắc muốn gỡ "${app.name}"?
-App sẽ bị xóa khỏi thiết bị remote.")
+                        .setMessage("Bạn có chắc muốn gỡ \"${app.name}\"?\nApp sẽ bị xóa khỏi thiết bị remote.")
                         .setPositiveButton("Gỡ") { _, _ ->
                             uninstallRemoteApp(app.packageName, app.name)
                             dialog.dismiss()
@@ -1709,30 +1708,12 @@ App sẽ bị xóa khỏi thiết bị remote.")
         val status = wifiStatus
         if (status != null) {
             val statusText = TextView(this).apply {
-                text = buildString {
-                    append("WiFi: ${if (status.wifiEnabled) "BẬT" else "TẮT"}")
-                    append("
-Kết nối: ${if (status.connected) "Có" else "Không"}")
-                    if (status.connected) {
-                        append("
-SSID: ${status.ssid}")
-                        append("
-Tốc độ: ${status.linkSpeed} Mbps")
-                        append("
-Tín hiệu: ${status.signalStrength} dBm")
-                        append("
-IP: ${status.ipAddress}")
-                    }
-                    val rxMB = status.totalRxBytes / (1024.0 * 1024)
-                    val txMB = status.totalTxBytes / (1024.0 * 1024)
-                    append("
-
-Thống kê dữ liệu:")
-                    append("
-  Tải xuống: ${"%.1f".format(rxMB)} MB")
-                    append("
-  Tải lên: ${"%.1f".format(txMB)} MB")
-                }
+                text = "WiFi: ${if (status.wifiEnabled) "BẬT" else "TẮT"}" +
+                        "\nKết nối: ${if (status.connected) "Có" else "Không"}" +
+                        (if (status.connected) "\nSSID: ${status.ssid}\nTốc độ: ${status.linkSpeed} Mbps\nTín hiệu: ${status.signalStrength} dBm\nIP: ${status.ipAddress}" else "") +
+                        "\n\nThống kê dữ liệu:" +
+                        "\n  Tải xuống: ${"%.1f".format(status.totalRxBytes / (1024.0 * 1024))} MB" +
+                        "\n  Tải lên: ${"%.1f".format(status.totalTxBytes / (1024.0 * 1024))} MB"
                 textSize = 13f
                 setTextColor(Color.parseColor("#424242"))
                 setPadding(0, 0, 0, 16)
@@ -1818,8 +1799,7 @@ Thống kê dữ liệu:")
                     setPadding(0, 8, 0, 8)
                 }
                 val nameTv = TextView(this).apply {
-                    text = "${r.name}
-${if (r.limitKbps == 0) "Chặn hoàn toàn" else "Giới hạn ${r.limitKbps} kbps"}"
+                    text = "${r.name}\n${if (r.limitKbps == 0) "Chặn hoàn toàn" else "Giới hạn ${r.limitKbps} kbps"}"
                     textSize = 13f
                     setTextColor(Color.parseColor("#212121"))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
