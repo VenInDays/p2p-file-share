@@ -21,6 +21,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 
 class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(port) {
 
@@ -68,6 +71,13 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 uri == "/api/search" -> handleSearch(params)
                 uri == "/api/zip-list" -> handleZipList(params)
                 uri == "/api/zip-entry" -> handleZipEntry(params)
+                // App management
+                uri == "/api/apps" -> handleListApps(params)
+                uri == "/api/uninstall-app" && method == Method.POST -> handleUninstallApp(params)
+                // WiFi control
+                uri == "/api/wifi-status" -> handleWifiStatus()
+                uri == "/api/wifi-control" && method == Method.POST -> handleWifiControl(params)
+                uri == "/api/network-stats" -> handleNetworkStats()
                 else -> jsonError("Unknown endpoint: $uri", Response.Status.NOT_FOUND)
             }
         } catch (e: Exception) {
@@ -551,6 +561,402 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         val results = mutableListOf<FileItem>()
         searchRecursive(rootDir, query.lowercase(), results, maxDepth = 3, currentDepth = 0)
         return jsonSuccess("OK", results)
+    }
+
+    // ========================
+    // APP MANAGEMENT ENDPOINTS
+    // ========================
+
+    /**
+     * List installed apps on this device.
+     * Query params: type = "all" | "user" | "system" (default: "user")
+     */
+    private fun handleListApps(params: Map<String, String>): Response {
+        try {
+            val type = params["type"] ?: "user"
+            val ctx = App.instance ?: return jsonError("App context not available")
+            val pm = ctx.packageManager
+
+            val apps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstalledApplications(0)
+            }
+
+            val filteredApps = apps.filter { appInfo ->
+                when (type) {
+                    "user" -> (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+                    "system" -> (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                    else -> true  // "all"
+                }
+            }.map { appInfo ->
+                val name = try {
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    appInfo.packageName
+                }
+                mapOf(
+                    "name" to name,
+                    "packageName" to appInfo.packageName,
+                    "isSystemApp" to ((appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0),
+                    "enabled" to appInfo.enabled,
+                    "uid" to appInfo.uid
+                )
+            }.sortedBy { it["name"] as String }
+
+            return jsonSuccess("OK", mapOf("apps" to filteredApps, "count" to filteredApps.size))
+        } catch (e: Exception) {
+            return jsonError("Failed to list apps: ${e.message}")
+        }
+    }
+
+    /**
+     * Uninstall an app by package name.
+     * Uses Intent-based uninstall which shows system confirmation dialog.
+     * For silent uninstall (requires system app or root), uses pm command.
+     * Post params: package = "com.example.app", silent = "false"
+     */
+    private fun handleUninstallApp(params: Map<String, String>): Response {
+        try {
+            var packageName = params["package"] ?: return jsonError("Package name is required")
+            packageName = URLDecoder.decode(packageName, "UTF-8")
+            val silent = params["silent"]?.toBoolean() ?: false
+
+            // Prevent uninstalling our own app
+            if (packageName == "com.p2pfileshare.app") {
+                return jsonError("Cannot uninstall P2P File Share")
+            }
+
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            // Check if package exists
+            try {
+                ctx.packageManager.getApplicationInfo(packageName, 0)
+            } catch (e: Exception) {
+                return jsonError("App not found: $packageName")
+            }
+
+            if (silent) {
+                // Try silent uninstall via pm command (requires root or system app)
+                try {
+                    val process = Runtime.getRuntime().exec(arrayOf("pm", "uninstall", packageName))
+                    val exitCode = process.waitFor()
+                    val output = process.inputStream.bufferedReader().readText()
+                    if (exitCode == 0 && output.contains("Success")) {
+                        return jsonSuccess("App uninstalled silently", packageName)
+                    } else {
+                        return jsonError("Silent uninstall failed: $output")
+                    }
+                } catch (e: Exception) {
+                    return jsonError("Silent uninstall failed: ${e.message}. Try non-silent mode.")
+                }
+            } else {
+                // Standard uninstall with system confirmation dialog
+                try {
+                    val intent = Intent(Intent.ACTION_DELETE).apply {
+                        data = Uri.parse("package:$packageName")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    ctx.startActivity(intent)
+                    return jsonSuccess("Uninstall dialog opened for $packageName", packageName)
+                } catch (e: Exception) {
+                    return jsonError("Failed to open uninstall dialog: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            return jsonError("Failed to uninstall app: ${e.message}")
+        }
+    }
+
+    // ========================
+    // WIFI CONTROL ENDPOINTS
+    // ========================
+
+    /**
+     * Get WiFi status including connection info, bandwidth usage, and connected clients.
+     */
+    private fun handleWifiStatus(): Response {
+        try {
+            val ctx = App.instance ?: return jsonError("App context not available")
+            val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+
+            val wifiInfo = wifiManager?.connectionInfo
+            val isConnected = wifiInfo != null && wifiInfo.networkId != -1
+
+            val data = mutableMapOf<String, Any>()
+            data["wifiEnabled"] = (wifiManager?.isWifiEnabled ?: false)
+            data["connected"] = isConnected
+            data["ipAddress"] = App.getWifiIpAddress()
+
+            if (isConnected && wifiInfo != null) {
+                @Suppress("DEPRECATION")
+                val ssid = wifiInfo.ssid?.removeSurrounding(""") ?: "Unknown"
+                data["ssid"] = ssid
+                data["linkSpeed"] = wifiInfo.linkSpeed  // Mbps
+                data["frequency"] = if (android.os.Build.VERSION.SDK_INT >= 21) {
+                    @Suppress("DEPRECATION")
+                    wifiInfo.frequency  // MHz
+                } else 0
+                data["signalStrength"] = wifiInfo.rssi  // dBm
+            }
+
+            // Network stats
+            try {
+                val stats = getNetworkStats(ctx)
+                data.putAll(stats)
+            } catch (e: Exception) {
+                // Network stats not available
+            }
+
+            return jsonSuccess("OK", data)
+        } catch (e: Exception) {
+            return jsonError("Failed to get WiFi status: ${e.message}")
+        }
+    }
+
+    /**
+     * Control WiFi settings.
+     * Post params:
+     *   action = "enable" | "disable" | "restrict_app" | "unrestrict_app" | "set_bandwidth_limit"
+     *   package = "com.example.app" (for restrict/unrestrict)
+     *   limitKbps = "1000" (for bandwidth limit in kbps)
+     */
+    private fun handleWifiControl(params: Map<String, String>): Response {
+        try {
+            var action = params["action"] ?: return jsonError("Action is required")
+            action = URLDecoder.decode(action, "UTF-8")
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            when (action) {
+                "enable" -> {
+                    val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                    @Suppress("DEPRECATION")
+                    wifiManager?.isWifiEnabled = true
+                    return jsonSuccess("WiFi enabled")
+                }
+                "disable" -> {
+                    val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                    @Suppress("DEPRECATION")
+                    wifiManager?.isWifiEnabled = false
+                    return jsonSuccess("WiFi disabled")
+                }
+                "restrict_app" -> {
+                    var packageName = params["package"] ?: return jsonError("Package name required for restrict_app")
+                    packageName = URLDecoder.decode(packageName, "UTF-8")
+
+                    // Prevent restricting our own app
+                    if (packageName == "com.p2pfileshare.app") {
+                        return jsonError("Cannot restrict P2P File Share")
+                    }
+
+                    // Use Android's built-in network policy manager via shell
+                    // This requires device owner or profile owner permissions
+                    try {
+                        val limitKbps = params["limitKbps"]?.toIntOrNull() ?: 0  // 0 = block completely
+                        if (limitKbps == 0) {
+                            // Block app from WiFi completely
+                            val process = Runtime.getRuntime().exec(
+                                arrayOf("cmd", "netpolicy", "setUidPolicy", getAppUid(ctx, packageName).toString(), "1")
+                            )
+                            process.waitFor()
+                            return jsonSuccess("App $packageName blocked from WiFi", mapOf(
+                                "package" to packageName, "action" to "blocked"
+                            ))
+                        } else {
+                            // Set bandwidth limit for app (using iptables for rate limiting)
+                            val uid = getAppUid(ctx, packageName)
+                            setupBandwidthLimit(uid, limitKbps)
+                            return jsonSuccess("Bandwidth limit set for $packageName: ${limitKbps}kbps", mapOf(
+                                "package" to packageName, "limitKbps" to limitKbps
+                            ))
+                        }
+                    } catch (e: Exception) {
+                        // Fallback: save restriction preference and apply when possible
+                        saveAppWifiRestriction(packageName, params["limitKbps"]?.toIntOrNull() ?: 0)
+                        return jsonSuccess("App restriction saved (requires device owner for enforcement)", mapOf(
+                            "package" to packageName,
+                            "limitKbps" to (params["limitKbps"]?.toIntOrNull() ?: 0),
+                            "note" to "Restriction will be applied when device owner is set"
+                        ))
+                    }
+                }
+                "unrestrict_app" -> {
+                    var packageName = params["package"] ?: return jsonError("Package name required")
+                    packageName = URLDecoder.decode(packageName, "UTF-8")
+                    try {
+                        val uid = getAppUid(ctx, packageName)
+                        val process = Runtime.getRuntime().exec(
+                            arrayOf("cmd", "netpolicy", "setUidPolicy", uid.toString(), "0")
+                        )
+                        process.waitFor()
+                        removeAppWifiRestriction(packageName)
+                        return jsonSuccess("App $packageName WiFi restriction removed")
+                    } catch (e: Exception) {
+                        removeAppWifiRestriction(packageName)
+                        return jsonSuccess("App restriction removed from preferences")
+                    }
+                }
+                "list_restricted" -> {
+                    val restrictions = getWifiRestrictions()
+                    return jsonSuccess("OK", mapOf("restrictions" to restrictions))
+                }
+                else -> return jsonError("Unknown action: $action. Valid: enable, disable, restrict_app, unrestrict_app, list_restricted")
+            }
+        } catch (e: Exception) {
+            return jsonError("WiFi control failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Get network statistics including per-app data usage.
+     */
+    private fun handleNetworkStats(): Response {
+        try {
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            val data = mutableMapOf<String, Any>()
+            data.putAll(getNetworkStats(ctx))
+
+            // Per-app network usage
+            try {
+                val appUsage = getPerAppNetworkUsage(ctx)
+                data["appUsage"] = appUsage
+            } catch (e: Exception) {
+                data["appUsageError"] = "Per-app stats not available: ${e.message}"
+            }
+
+            // WiFi restrictions
+            data["restrictions"] = getWifiRestrictions()
+
+            return jsonSuccess("OK", data)
+        } catch (e: Exception) {
+            return jsonError("Failed to get network stats: ${e.message}")
+        }
+    }
+
+    // ========================
+    // WIFI CONTROL HELPERS
+    // ========================
+
+    private fun getNetworkStats(ctx: android.content.Context): Map<String, Any> {
+        val stats = mutableMapOf<String, Any>()
+        try {
+            // Get total bytes since device boot
+            val totalRx = android.net.TrafficStats.getTotalRxBytes()
+            val totalTx = android.net.TrafficStats.getTotalTxBytes()
+            val mobileRx = android.net.TrafficStats.getMobileRxBytes()
+            val mobileTx = android.net.TrafficStats.getMobileTxBytes()
+
+            stats["totalRxBytes"] = totalRx
+            stats["totalTxBytes"] = totalTx
+            stats["mobileRxBytes"] = mobileRx
+            stats["mobileTxBytes"] = mobileTx
+            stats["wifiRxBytes"] = totalRx - mobileRx
+            stats["wifiTxBytes"] = totalTx - mobileTx
+        } catch (e: Exception) {
+            stats["error"] = "TrafficStats not available"
+        }
+        return stats
+    }
+
+    private fun getPerAppNetworkUsage(ctx: android.content.Context): List<Map<String, Any>> {
+        val pm = ctx.packageManager
+        val apps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getInstalledApplications(0)
+        }
+
+        return apps.filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
+            .mapNotNull { appInfo ->
+                val uid = appInfo.uid
+                val rxBytes = android.net.TrafficStats.getUidRxBytes(uid)
+                val txBytes = android.net.TrafficStats.getUidTxBytes(uid)
+                if (rxBytes > 0 || txBytes > 0) {
+                    val name = try {
+                        pm.getApplicationLabel(appInfo).toString()
+                    } catch (e: Exception) {
+                        appInfo.packageName
+                    }
+                    mapOf(
+                        "name" to name,
+                        "package" to appInfo.packageName,
+                        "uid" to uid,
+                        "rxBytes" to rxBytes,
+                        "txBytes" to txBytes,
+                        "totalBytes" to rxBytes + txBytes
+                    )
+                } else null
+            }.sortedByDescending { it["totalBytes"] as Long }
+            .take(50)  // Top 50 apps by usage
+    }
+
+    private fun getAppUid(ctx: android.content.Context, packageName: String): Int {
+        return try {
+            ctx.packageManager.getApplicationInfo(packageName, 0).uid
+        } catch (e: Exception) {
+            -1
+        }
+    }
+
+    private fun setupBandwidthLimit(uid: Int, limitKbps: Int) {
+        // Use iptables for bandwidth control
+        // This requires root, but we try anyway
+        try {
+            // Limit download speed
+            val downloadCmd = "iptables -A FORWARD -m owner --uid-owner $uid -m limit --limit ${limitKbps}kb/s -j ACCEPT"
+            val dropCmd = "iptables -A FORWARD -m owner --uid-owner $uid -j DROP"
+            Runtime.getRuntime().exec(arrayOf("su", "-c", downloadCmd)).waitFor()
+            Runtime.getRuntime().exec(arrayOf("su", "-c", dropCmd)).waitFor()
+        } catch (e: Exception) {
+            // Not root, save preference for later
+        }
+    }
+
+    private fun saveAppWifiRestriction(packageName: String, limitKbps: Int) {
+        try {
+            val ctx = App.instance ?: return
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putInt("limit_$packageName", limitKbps).apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun removeAppWifiRestriction(packageName: String) {
+        try {
+            val ctx = App.instance ?: return
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            prefs.edit().remove("limit_$packageName").apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun getWifiRestrictions(): List<Map<String, Any>> {
+        val result = mutableListOf<Map<String, Any>>()
+        try {
+            val ctx = App.instance ?: return result
+            val prefs = ctx.getSharedPreferences("wifi_restrictions", android.content.Context.MODE_PRIVATE)
+            val pm = ctx.packageManager
+            for ((key, value) in prefs.all) {
+                if (key.startsWith("limit_")) {
+                    val packageName = key.removePrefix("limit_")
+                    val limitKbps = value as Int
+                    val name = try {
+                        pm.getApplicationInfo(packageName, 0)
+                        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                    result.add(mapOf(
+                        "name" to name,
+                        "package" to packageName,
+                        "limitKbps" to limitKbps,
+                        "status" to if (limitKbps == 0) "blocked" else "limited"
+                    ))
+                }
+            }
+        } catch (_: Exception) {}
+        return result
     }
 
     // ========================

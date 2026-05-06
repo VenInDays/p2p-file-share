@@ -289,9 +289,9 @@ class P2PService : Service() {
                     Log.d(tag, "UDP: Peer discovered: ${peer.name} @ ${peer.host}:${peer.port}")
                     addPeerFromDiscovery(peer)
                 }
-                onPeerLost = { name ->
-                    Log.d(tag, "UDP: Peer lost: $name")
-                    removePeerFromDiscovery(name)
+                onPeerLost = { peerInfo ->
+                    Log.d(tag, "UDP: Peer lost: $peerInfo")
+                    removePeerFromDiscovery(peerInfo)
                 }
             }
             udpBeacon?.start()
@@ -473,7 +473,13 @@ class P2PService : Service() {
     @Synchronized
     private fun removePeerFromDiscovery(name: String) {
         synchronized(discoveredPeers) {
-            discoveredPeers.removeAll { it.name == name }
+            // Remove by both name AND host to handle edge cases
+            // Primary: match by name (from UDP timeout which passes name)
+            // Also remove any peer with matching host to prevent duplicates
+            val toRemove = discoveredPeers.filter { it.name == name || it.host == name }
+            for (peer in toRemove) {
+                discoveredPeers.remove(peer)
+            }
         }
         onPeerLost?.invoke(name)
     }

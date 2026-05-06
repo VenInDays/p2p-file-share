@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         try {
             P2PService.setPeerCallbacks(
                 onDiscovered = { peer -> runOnUiThread { peerAdapter.addPeer(peer) } },
-                onLost = { name -> runOnUiThread { peerAdapter.removePeer(name) } }
+                onLost = { hostOrName -> runOnUiThread { peerAdapter.removePeerByHostOrName(hostOrName) } }
             )
 
             val existingPeers = P2PService.getDiscoveredPeers()
@@ -208,6 +208,14 @@ class MainActivity : AppCompatActivity() {
             }
             R.id.action_view_toggle -> {
                 toggleViewMode(item)
+                true
+            }
+            R.id.action_app_manager -> {
+                showAppManager()
+                true
+            }
+            R.id.action_wifi_control -> {
+                showWifiControl()
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -1509,6 +1517,422 @@ class MainActivity : AppCompatActivity() {
         return "http://${peer.host}:${peer.port}/api/download?path=$encodedPath"
     }
 
+    // ========== App Manager ==========
+
+    private fun showAppManager() {
+        val peer = currentPeer
+        if (peer == null) {
+            Toast.makeText(this, "Hãy kết nối với thiết bị trước", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoading(true)
+        lifecycleScope.launch {
+            try {
+                val apps = apiClient.listApps(peer, "user")
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    if (apps != null) {
+                        showAppListDialog(apps)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Không thể lấy danh sách app", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    Toast.makeText(this@MainActivity, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun showAppListDialog(apps: List<ApiClient.AppInfo>) {
+        val dialog = BottomSheetDialog(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 64)
+        }
+
+        val title = TextView(this).apply {
+            text = "Quản lý App (${apps.size} apps)"
+            textSize = 18f
+            setTextColor(Color.parseColor("#212121"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, 24)
+        }
+        container.addView(title)
+
+        // Search bar for apps
+        val searchInput = EditText(this).apply {
+            hint = "Tìm app..."
+            textSize = 14f
+            setPadding(16, 12, 16, 12)
+        }
+        container.addView(searchInput)
+
+        // Scrollable list
+        val scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                800  // Max height
+            )
+        }
+        val listContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val appRows = mutableListOf<LinearLayout>()
+
+        for (app in apps) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 10, 0, 10)
+                isClickable = true
+                isFocusable = true
+                tag = app.name.lowercase()
+            }
+
+            val appName = TextView(this).apply {
+                text = app.name
+                textSize = 14f
+                setTextColor(Color.parseColor("#212121"))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            row.addView(appName)
+
+            val uninstallBtn = TextView(this).apply {
+                text = "Gỡ"
+                textSize = 12f
+                setTextColor(Color.parseColor("#F44336"))
+                setPadding(16, 8, 16, 8)
+                isClickable = true
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Xác nhận gỡ app")
+                        .setMessage("Bạn có chắc muốn gỡ "${app.name}"?
+App sẽ bị xóa khỏi thiết bị remote.")
+                        .setPositiveButton("Gỡ") { _, _ ->
+                            uninstallRemoteApp(app.packageName, app.name)
+                            dialog.dismiss()
+                        }
+                        .setNegativeButton("Hủy", null)
+                        .show()
+                }
+            }
+            row.addView(uninstallBtn)
+
+            listContainer.addView(row)
+            appRows.add(row)
+        }
+
+        // Search filter
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val query = s?.toString()?.lowercase() ?: ""
+                for (row in appRows) {
+                    val tag = row.tag as? String ?: ""
+                    row.visibility = if (query.isEmpty() || tag.contains(query)) View.VISIBLE else View.GONE
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        scrollView.addView(listContainer)
+        container.addView(scrollView)
+
+        dialog.setContentView(container)
+        dialog.show()
+    }
+
+    private fun uninstallRemoteApp(packageName: String, appName: String) {
+        val peer = currentPeer ?: return
+        lifecycleScope.launch {
+            val success = apiClient.uninstallApp(peer, packageName, silent = false)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity, "Đã gửi lệnh gỡ $appName", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Gỡ $appName thất bại", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // ========== WiFi Control ==========
+
+    private fun showWifiControl() {
+        val peer = currentPeer
+        if (peer == null) {
+            Toast.makeText(this, "Hãy kết nối với thiết bị trước", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoading(true)
+        lifecycleScope.launch {
+            try {
+                val wifiStatus = apiClient.getWifiStatus(peer)
+                val restrictions = apiClient.getWifiRestrictions(peer)
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    showWifiControlDialog(wifiStatus, restrictions)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    Toast.makeText(this@MainActivity, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun showWifiControlDialog(wifiStatus: ApiClient.WifiStatus?, restrictions: List<ApiClient.AppWifiRestriction>?) {
+        val dialog = BottomSheetDialog(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 64)
+        }
+
+        // Title
+        val title = TextView(this).apply {
+            text = "Điều khiển WiFi"
+            textSize = 18f
+            setTextColor(Color.parseColor("#212121"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, 16)
+        }
+        container.addView(title)
+
+        // WiFi Status
+        val status = wifiStatus
+        if (status != null) {
+            val statusText = TextView(this).apply {
+                text = buildString {
+                    append("WiFi: ${if (status.wifiEnabled) "BẬT" else "TẮT"}")
+                    append("
+Kết nối: ${if (status.connected) "Có" else "Không"}")
+                    if (status.connected) {
+                        append("
+SSID: ${status.ssid}")
+                        append("
+Tốc độ: ${status.linkSpeed} Mbps")
+                        append("
+Tín hiệu: ${status.signalStrength} dBm")
+                        append("
+IP: ${status.ipAddress}")
+                    }
+                    val rxMB = status.totalRxBytes / (1024.0 * 1024)
+                    val txMB = status.totalTxBytes / (1024.0 * 1024)
+                    append("
+
+Thống kê dữ liệu:")
+                    append("
+  Tải xuống: ${"%.1f".format(rxMB)} MB")
+                    append("
+  Tải lên: ${"%.1f".format(txMB)} MB")
+                }
+                textSize = 13f
+                setTextColor(Color.parseColor("#424242"))
+                setPadding(0, 0, 0, 16)
+                lineHeight = 22
+            }
+            container.addView(statusText)
+        }
+
+        // WiFi enable/disable buttons
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 16)
+        }
+
+        val btnEnable = TextView(this).apply {
+            text = "Bật WiFi"
+            textSize = 13f
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setBackgroundResource(R.drawable.bg_chip_selected)
+            setPadding(24, 12, 24, 12)
+            isClickable = true
+            setOnClickListener {
+                controlRemoteWifi("enable")
+                dialog.dismiss()
+            }
+        }
+        btnRow.addView(btnEnable)
+
+        val spacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(24, 1)
+        }
+        btnRow.addView(spacer)
+
+        val btnDisable = TextView(this).apply {
+            text = "Tắt WiFi"
+            textSize = 13f
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setBackgroundColor(Color.parseColor("#F44336"))
+            setPadding(24, 12, 24, 12)
+            isClickable = true
+            setOnClickListener {
+                controlRemoteWifi("disable")
+                dialog.dismiss()
+            }
+        }
+        btnRow.addView(btnDisable)
+
+        container.addView(btnRow)
+
+        // Restricted apps section
+        val restrictTitle = TextView(this).apply {
+            text = "App bị giới hạn WiFi"
+            textSize = 15f
+            setTextColor(Color.parseColor("#212121"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 8, 0, 8)
+        }
+        container.addView(restrictTitle)
+
+        if (restrictions.isNullOrEmpty()) {
+            val noRestrictions = TextView(this).apply {
+                text = "Chưa có app nào bị giới hạn"
+                textSize = 13f
+                setTextColor(Color.parseColor("#9E9E9E"))
+                setPadding(0, 4, 0, 8)
+            }
+            container.addView(noRestrictions)
+        } else {
+            val scrollView = ScrollView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    400
+                )
+            }
+            val restrictList = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            for (r in restrictions) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 8, 0, 8)
+                }
+                val nameTv = TextView(this).apply {
+                    text = "${r.name}
+${if (r.limitKbps == 0) "Chặn hoàn toàn" else "Giới hạn ${r.limitKbps} kbps"}"
+                    textSize = 13f
+                    setTextColor(Color.parseColor("#212121"))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                row.addView(nameTv)
+
+                val removeBtn = TextView(this).apply {
+                    text = "Bỏ giới hạn"
+                    textSize = 11f
+                    setTextColor(Color.parseColor("#1565C0"))
+                    isClickable = true
+                    setOnClickListener {
+                        controlRemoteWifi("unrestrict_app", r.packageName)
+                        dialog.dismiss()
+                    }
+                }
+                row.addView(removeBtn)
+                restrictList.addView(row)
+            }
+            scrollView.addView(restrictList)
+            container.addView(scrollView)
+        }
+
+        // Add restriction button
+        val addRestrictBtn = TextView(this).apply {
+            text = "+ Thêm giới hạn WiFi cho app"
+            textSize = 14f
+            setTextColor(Color.parseColor("#1565C0"))
+            setPadding(0, 12, 0, 12)
+            isClickable = true
+            setOnClickListener {
+                dialog.dismiss()
+                showAddWifiRestrictionDialog()
+            }
+        }
+        container.addView(addRestrictBtn)
+
+        dialog.setContentView(container)
+        dialog.show()
+    }
+
+    private fun showAddWifiRestrictionDialog() {
+        val peer = currentPeer ?: return
+        showLoading(true)
+        lifecycleScope.launch {
+            try {
+                val apps = apiClient.listApps(peer, "user")
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    if (apps != null) {
+                        showRestrictAppDialog(apps)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Không thể lấy danh sách app", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    Toast.makeText(this@MainActivity, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun showRestrictAppDialog(apps: List<ApiClient.AppInfo>) {
+        val options = arrayOf("Chặn hoàn toàn (không nhận WiFi)", "Giới hạn 256 kbps", "Giới hạn 512 kbps", "Giới hạn 1 Mbps", "Giới hạn 2 Mbps")
+        val limitValues = intArrayOf(0, 256, 512, 1024, 2048)
+
+        val appNames = apps.map { it.name }.toTypedArray()
+        var selectedAppIndex = 0
+
+        AlertDialog.Builder(this)
+            .setTitle("Chọn app để giới hạn WiFi")
+            .setSingleChoiceItems(appNames, 0) { _, which -> selectedAppIndex = which }
+            .setPositiveButton("Tiếp") { dialog, _ ->
+                dialog.dismiss()
+                var selectedLimitIndex = 0
+                AlertDialog.Builder(this)
+                    .setTitle("Chọn mức giới hạn cho ${appNames[selectedAppIndex]}")
+                    .setSingleChoiceItems(options, 0) { _, which -> selectedLimitIndex = which }
+                    .setPositiveButton("Áp dụng") { _, _ ->
+                        val packageName = apps[selectedAppIndex].packageName
+                        val limitKbps = limitValues[selectedLimitIndex]
+                        controlRemoteWifi("restrict_app", packageName, limitKbps)
+                    }
+                    .setNegativeButton("Hủy", null)
+                    .show()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun controlRemoteWifi(action: String, packageName: String? = null, limitKbps: Int? = null) {
+        val peer = currentPeer ?: return
+        lifecycleScope.launch {
+            val success = apiClient.controlWifi(peer, action, packageName, limitKbps)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    val msg = when (action) {
+                        "enable" -> "Đã bật WiFi trên thiết bị remote"
+                        "disable" -> "Đã tắt WiFi trên thiết bị remote"
+                        "restrict_app" -> "Đã áp dụng giới hạn WiFi cho app"
+                        "unrestrict_app" -> "Đã bỏ giới hạn WiFi cho app"
+                        else -> "Đã thực hiện lệnh WiFi"
+                    }
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Thao tác thất bại", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     // ========== Inner Class: PeerAdapter ==========
 
     inner class PeerAdapter(
@@ -1538,6 +1962,15 @@ class MainActivity : AppCompatActivity() {
 
         fun removePeer(name: String) {
             val index = peers.indexOfFirst { it.name == name }
+            if (index >= 0) {
+                peers.removeAt(index)
+                notifyItemRemoved(index)
+            }
+        }
+
+        fun removePeerByHostOrName(hostOrName: String) {
+            // Try matching by host first (more reliable), then by name
+            val index = peers.indexOfFirst { it.host == hostOrName || it.name == hostOrName }
             if (index >= 0) {
                 peers.removeAt(index)
                 notifyItemRemoved(index)

@@ -27,6 +27,16 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_app_manager"
+        android:title="Quản lý App"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_wifi_control"
+        android:title="Điều khiển WiFi"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_sort"
         android:title="Sắp xếp"
         app:showAsAction="never" />

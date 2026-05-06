@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.7.0.apk"
+        FINAL_APK="P2PFileShare-v1.8.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.7.0.apk
+        path: P2PFileShare-v1.8.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.7.0-build${{ github.run_number }}"
+        TAG="v1.8.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,48 +126,37 @@ jobs:
 
         # Write release notes to file to avoid shell quoting issues
         cat > /tmp/notes.md << 'NOTES_EOF'
-        ## P2P File Share v1.7.0
+        ## P2P File Share v1.8.0
 
         ### Tinh nang moi
-        - **UI Nang cap** - Giao dien Material Design 3 moi, hieu ung animation muot ma
-        - **Chinh sua anh muot** - Xu ly anh lon khong lag (Subsampling Scale ImageView)
-        - **Xem ZIP** - Duyet noi dung file ZIP truc tiep trong app
-        - **Bao mat tang cuong** - Ma hoa AES-256-GCM du lieu, API token xac thuc, rate limiting
-        - **Lock bao mat cao** - Lock chong crack, data ma hoa, terminal attack vo ich
-        - **API Authentication** - Chi thiet bi co app moi goi duoc API (HMAC-SHA256 token)
-        - **Anti-tampering** - Chong tamper, app van muot duoi tan cong
-        - **Rate Limiting** - Chong brute-force, chi cho phep 60 requests/phut/IP
+        - **Quan ly App** - Xem va go cai dat app tren thiet bi remote
+        - **Dieu khien WiFi** - Bat/tat WiFi, gioi han app nhan WiFi, chong app cuon du lieu
+        - **Thong ke mang** - Xem du lieu WiFi su dung moi app, tong traffic
 
-        ### Cai tien
-        - Image viewing: Subsampling Scale ImageView thay the load full bitmap
-        - ZIP viewer: liet ke, xem file trong ZIP khong can giai nen
-        - Security: AES-256-GCM encryption at rest cho du lieu nhay cam
-        - Security: HMAC-SHA256 token cho moi API request
-        - Security: Rate limiting chong brute-force (60 req/min/IP)
-        - Security: Lock mechanism chong terminal/external access
-        - Security: App signature verification chong tampering
-        - UI: Card-based layout, smooth animations, better icons
+        ### Sua loi
+        - **Fix duplicate peer** - Khong con hien thi nhieu thiet bi giong nhau khi restart
+        - **Fix MaterialTextView cast** - Sua loi crash khoi tao do ImageButton cast
+
+        ### Cai tien Peer Discovery
+        - Xoa peer theo host IP thay vi chi theo ten (chinh xac hon)
+        - Cap nhat peer khi doi ten thiet bi
+        - PeerAdapter xu ly dedup bang host + name
 
         ### Tinh nang cu
         - Tu dong ket noi cung WiFi (UDP Discovery + HMAC-SHA256)
         - Truy cap file: Download/Edit/Delete/Upload/Create/Copy/Move
         - Lock This Phone - Chong truy cap tu thiet bi khac
-        - Remote Control - Dieu khien man hinh may khac realtime (~15-20 FPS)
+        - Remote Control - Dieu khien man hinh may khac realtime
+        - ZIP Viewer - Duyet noi dung file ZIP
+        - Bao mat: AES-256-GCM, API token, rate limiting
         - Tu khoi dong khi bat may
 
         ### Ho tro Android 8.0+ (API 26)
-
-        ### Cai dat
-        1. Tai APK ve 2 may
-        2. Cai dat APK (cho phep cai tu nguon khong xac dinh)
-        3. Mo app, cap TAT CA quyen (rat quan trong!)
-        4. Ket noi cung WiFi - Tu tim thay nhau tu dong!
-        5. Cham vao thiet bi de duyet file
 
         APK signed with v1 + v2 + v3
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.7.0.apk \
+          P2PFileShare-v1.8.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md

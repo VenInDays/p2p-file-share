@@ -437,6 +437,150 @@ class ApiClient {
     }
 
     // ========================
+    // APP MANAGEMENT API
+    // ========================
+
+    data class AppInfo(
+        val name: String,
+        val packageName: String,
+        val isSystemApp: Boolean,
+        val enabled: Boolean
+    )
+
+    suspend fun listApps(peer: PeerDevice, type: String = "user"): List<AppInfo>? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/apps?type=$type", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                val appsList = dataMap["apps"] as? List<Map<String, Any>> ?: return@withContext null
+                appsList.map { app ->
+                    AppInfo(
+                        name = app["name"] as? String ?: "",
+                        packageName = app["packageName"] as? String ?: "",
+                        isSystemApp = app["isSystemApp"] as? Boolean ?: false,
+                        enabled = app["enabled"] as? Boolean ?: true
+                    )
+                }
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "listApps failed", e)
+            null
+        }
+    }
+
+    suspend fun uninstallApp(peer: PeerDevice, packageName: String, silent: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/uninstall-app?package=${URLEncoder.encode(packageName, "UTF-8")}&silent=$silent", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "uninstallApp failed", e)
+            false
+        }
+    }
+
+    // ========================
+    // WIFI CONTROL API
+    // ========================
+
+    data class WifiStatus(
+        val wifiEnabled: Boolean,
+        val connected: Boolean,
+        val ipAddress: String,
+        val ssid: String = "",
+        val linkSpeed: Int = 0,
+        val signalStrength: Int = 0,
+        val totalRxBytes: Long = 0,
+        val totalTxBytes: Long = 0
+    )
+
+    data class AppWifiRestriction(
+        val name: String,
+        val packageName: String,
+        val limitKbps: Int,
+        val status: String
+    )
+
+    suspend fun getWifiStatus(peer: PeerDevice): WifiStatus? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/wifi-status", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                WifiStatus(
+                    wifiEnabled = dataMap["wifiEnabled"] as? Boolean ?: false,
+                    connected = dataMap["connected"] as? Boolean ?: false,
+                    ipAddress = dataMap["ipAddress"] as? String ?: "",
+                    ssid = dataMap["ssid"] as? String ?: "",
+                    linkSpeed = (dataMap["linkSpeed"] as? Number)?.toInt() ?: 0,
+                    signalStrength = (dataMap["signalStrength"] as? Number)?.toInt() ?: 0,
+                    totalRxBytes = (dataMap["totalRxBytes"] as? Number)?.toLong() ?: 0,
+                    totalTxBytes = (dataMap["totalTxBytes"] as? Number)?.toLong() ?: 0
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getWifiStatus failed", e)
+            null
+        }
+    }
+
+    suspend fun controlWifi(peer: PeerDevice, action: String, packageName: String? = null, limitKbps: Int? = null): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            var url = "http://${peer.host}:${peer.port}/api/wifi-control?action=${URLEncoder.encode(action, "UTF-8")}"
+            if (packageName != null) url += "&package=${URLEncoder.encode(packageName, "UTF-8")}"
+            if (limitKbps != null) url += "&limitKbps=$limitKbps"
+            val json = httpGet(url, token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            response.success
+        } catch (e: Exception) {
+            Log.e(tag, "controlWifi failed", e)
+            false
+        }
+    }
+
+    suspend fun getWifiRestrictions(peer: PeerDevice): List<AppWifiRestriction>? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/wifi-control?action=list_restricted", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                val restrictionsList = dataMap["restrictions"] as? List<Map<String, Any>> ?: return@withContext null
+                restrictionsList.map { r ->
+                    AppWifiRestriction(
+                        name = r["name"] as? String ?: "",
+                        packageName = r["package"] as? String ?: "",
+                        limitKbps = (r["limitKbps"] as? Number)?.toInt() ?: 0,
+                        status = r["status"] as? String ?: "unknown"
+                    )
+                }
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getWifiRestrictions failed", e)
+            null
+        }
+    }
+
+    suspend fun getNetworkStats(peer: PeerDevice): Map<String, Any>? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/network-stats", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                gson.fromJson(gson.toJson(response.data), Map::class.java) as Map<String, Any>
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getNetworkStats failed", e)
+            null
+        }
+    }
+
+    // ========================
     // HELPER METHODS
     // ========================
 

@@ -88,7 +88,7 @@ class UdpDiscoveryBeacon(private val prefs: PreferencesManager) {
 
     // Callbacks
     var onPeerDiscovered: ((PeerDevice) -> Unit)? = null
-    var onPeerLost: ((String) -> Unit)? = null
+    var onPeerLost: ((String) -> Unit)? = null  // Passes "host:name" for better dedup
 
     data class PeerInfo(
         val peer: PeerDevice,
@@ -305,10 +305,16 @@ class UdpDiscoveryBeacon(private val prefs: PreferencesManager) {
             )
 
             val wasNew = !discoveredPeers.containsKey(peerIp)
+            val existingInfo = discoveredPeers[peerIp]
+            val nameChanged = existingInfo != null && existingInfo.peer.name != deviceName
             discoveredPeers[peerIp] = PeerInfo(peer, System.currentTimeMillis())
 
             if (wasNew) {
                 Log.d(TAG, "Peer discovered: $deviceName @ $peerIp:$port")
+                onPeerDiscovered?.invoke(peer)
+            } else if (nameChanged) {
+                // Name changed but same host - notify to update UI
+                Log.d(TAG, "Peer updated: $deviceName @ $peerIp:$port")
                 onPeerDiscovered?.invoke(peer)
             }
         } catch (e: Exception) {
@@ -341,7 +347,8 @@ class UdpDiscoveryBeacon(private val prefs: PreferencesManager) {
                     val info = discoveredPeers.remove(ip)
                     if (info != null) {
                         Log.d(TAG, "Peer lost: ${info.peer.name} @ $ip")
-                        onPeerLost?.invoke(info.peer.name)
+                        // Pass host for reliable dedup, fall back to name
+                        onPeerLost?.invoke(ip)
                     }
                 }
             } catch (e: Exception) {
