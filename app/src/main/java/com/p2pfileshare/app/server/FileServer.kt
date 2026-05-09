@@ -92,7 +92,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             "name" to prefs.serviceName,
             "port" to listeningPort,
             "locked" to prefs.isLocked,
-            "version" to "1.9.0",
+            "version" to "1.9.1",
             "token" to SecurityManager.getApiToken() // Share token so paired devices can authenticate
         )
         return jsonSuccess("OK", data)
@@ -619,6 +619,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
         try {
             val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name is required"), "UTF-8")
             val silent = params["silent"]?.toBoolean() ?: false
+            val disableOnly = params["disable"]?.toBoolean() ?: true  // Default: disable instead of uninstall (more reliable)
 
             // Prevent uninstalling our own app
             if (packageName == "com.p2pfileshare.app") {
@@ -634,32 +635,91 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 return jsonError("App not found: $packageName")
             }
 
+            // Method 1: If we are Device Owner, use DevicePolicyManager to uninstall silently
+            val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? android.app.admin.DevicePolicyManager
+            val adminComponent = android.content.ComponentName(ctx, com.p2pfileshare.app.admin.P2PDeviceAdminReceiver::class.java)
+            val isDeviceOwner = dpm?.isDeviceOwnerApp(ctx.packageName) == true
+
+            if (isDeviceOwner && silent) {
+                // Device Owner can silently uninstall apps
+                try {
+                    dpm.uninstallPackageAdmin(adminComponent, packageName)
+                    return jsonSuccess("App uninstalled silently (Device Owner)", mapOf("package" to packageName, "method" to "device_owner"))
+                } catch (e: Exception) {
+                    // Fall through to other methods
+                    android.util.Log.w("FileServer", "Device Owner uninstall failed, trying alternatives", e)
+                }
+            }
+
+            // Method 2: Disable the app (works without root - app disappears from launcher)
+            // This is the most reliable method for non-root, non-device-owner
+            if (disableOnly && !silent) {
+                try {
+                    // Check if already disabled
+                    val appInfo = ctx.packageManager.getApplicationInfo(packageName, 0)
+                    if (!appInfo.enabled) {
+                        return jsonSuccess("App is already disabled", mapOf("package" to packageName, "method" to "already_disabled"))
+                    }
+
+                    // Disable the app - it will disappear from launcher and cannot run
+                    ctx.packageManager.setApplicationEnabledSetting(
+                        packageName,
+                        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
+                        0
+                    )
+                    return jsonSuccess("App disabled (hidden from launcher, cannot run)", mapOf(
+                        "package" to packageName,
+                        "method" to "disabled",
+                        "note" to "App is hidden and cannot run. Use enable-app to restore."
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.w("FileServer", "Disable app failed, trying uninstall dialog", e)
+                    // Fall through to uninstall dialog
+                }
+            }
+
+            // Method 3: Try silent uninstall via pm command (requires root or system app)
             if (silent) {
-                // Try silent uninstall via pm command (requires root or system app)
                 try {
                     val process = Runtime.getRuntime().exec(arrayOf("pm", "uninstall", packageName))
                     val exitCode = process.waitFor()
                     val output = process.inputStream.bufferedReader().readText()
                     if (exitCode == 0 && output.contains("Success")) {
-                        return jsonSuccess("App uninstalled silently", packageName)
+                        return jsonSuccess("App uninstalled silently", mapOf("package" to packageName, "method" to "pm_uninstall"))
                     } else {
-                        return jsonError("Silent uninstall failed: $output")
+                        // pm uninstall failed, try disabling instead
+                        try {
+                            ctx.packageManager.setApplicationEnabledSetting(
+                                packageName,
+                                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
+                                0
+                            )
+                            return jsonSuccess("App disabled (silent uninstall not available)", mapOf(
+                                "package" to packageName, "method" to "disabled",
+                                "note" to "Silent uninstall requires root. App has been disabled instead."
+                            ))
+                        } catch (e2: Exception) {
+                            return jsonError("Silent uninstall failed and disable also failed: $output")
+                        }
                     }
                 } catch (e: Exception) {
                     return jsonError("Silent uninstall failed: ${e.message}. Try non-silent mode.")
                 }
-            } else {
-                // Standard uninstall with system confirmation dialog
-                try {
-                    val intent = Intent(Intent.ACTION_DELETE).apply {
-                        data = Uri.parse("package:$packageName")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    ctx.startActivity(intent)
-                    return jsonSuccess("Uninstall dialog opened for $packageName", packageName)
-                } catch (e: Exception) {
-                    return jsonError("Failed to open uninstall dialog: ${e.message}")
+            }
+
+            // Method 4: Standard uninstall with system confirmation dialog
+            try {
+                val intent = Intent(Intent.ACTION_DELETE).apply {
+                    data = Uri.parse("package:$packageName")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
+                ctx.startActivity(intent)
+                return jsonSuccess("Uninstall dialog opened for $packageName", mapOf(
+                    "package" to packageName, "method" to "dialog",
+                    "note" to "User must confirm uninstall on the remote device"
+                ))
+            } catch (e: Exception) {
+                return jsonError("Failed to open uninstall dialog: ${e.message}")
             }
         } catch (e: Exception) {
             return jsonError("Failed to uninstall app: ${e.message}")
@@ -728,76 +788,246 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
 
             when (action) {
                 "enable" -> {
-                    val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-                    @Suppress("DEPRECATION")
-                    wifiManager?.isWifiEnabled = true
-                    return jsonSuccess("WiFi enabled", null)
+                    // Android 10+ (API 29) cannot programmatically enable WiFi
+                    // Must use Settings.Panel or WiFi panel intent
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        // Open WiFi settings panel on the remote device
+                        try {
+                            val panelIntent = Intent(android.provider.Settings.Panel.ACTION_WIFI)
+                            panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            ctx.startActivity(panelIntent)
+                            return jsonSuccess("WiFi settings panel opened on remote device (Android 10+)", mapOf("action" to "panel_opened", "note" to "User must enable WiFi manually"))
+                        } catch (e: Exception) {
+                            // Fallback: open WiFi settings
+                            try {
+                                val settingsIntent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+                                settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(settingsIntent)
+                                return jsonSuccess("WiFi settings opened on remote device", mapOf("action" to "settings_opened"))
+                            } catch (e2: Exception) {
+                                return jsonError("Cannot open WiFi settings: ${e2.message}")
+                            }
+                        }
+                    } else {
+                        // Pre-Android 10: can programmatically toggle WiFi
+                        try {
+                            val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                            @Suppress("DEPRECATION")
+                            wifiManager?.isWifiEnabled = true
+                            return jsonSuccess("WiFi enabled", mapOf("action" to "enabled"))
+                        } catch (e: Exception) {
+                            return jsonError("Failed to enable WiFi: ${e.message}")
+                        }
+                    }
                 }
                 "disable" -> {
-                    val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-                    @Suppress("DEPRECATION")
-                    wifiManager?.isWifiEnabled = false
-                    return jsonSuccess("WiFi disabled", null)
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        try {
+                            val panelIntent = Intent(android.provider.Settings.Panel.ACTION_WIFI)
+                            panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            ctx.startActivity(panelIntent)
+                            return jsonSuccess("WiFi settings panel opened on remote device (Android 10+)", mapOf("action" to "panel_opened", "note" to "User must disable WiFi manually"))
+                        } catch (e: Exception) {
+                            try {
+                                val settingsIntent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+                                settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(settingsIntent)
+                                return jsonSuccess("WiFi settings opened on remote device", mapOf("action" to "settings_opened"))
+                            } catch (e2: Exception) {
+                                return jsonError("Cannot open WiFi settings: ${e2.message}")
+                            }
+                        }
+                    } else {
+                        try {
+                            val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                            @Suppress("DEPRECATION")
+                            wifiManager?.isWifiEnabled = false
+                            return jsonSuccess("WiFi disabled", mapOf("action" to "disabled"))
+                        } catch (e: Exception) {
+                            return jsonError("Failed to disable WiFi: ${e.message}")
+                        }
+                    }
                 }
                 "restrict_app" -> {
                     val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required for restrict_app"), "UTF-8")
+                    val limitKbps = params["limitKbps"]?.toIntOrNull() ?: 0  // 0 = block completely
 
                     // Prevent restricting our own app
                     if (packageName == "com.p2pfileshare.app") {
                         return jsonError("Cannot restrict P2P File Share")
                     }
 
-                    // Use Android's built-in network policy manager via shell
-                    // This requires device owner or profile owner permissions
-                    try {
-                        val limitKbps = params["limitKbps"]?.toIntOrNull() ?: 0  // 0 = block completely
-                        if (limitKbps == 0) {
-                            // Block app from WiFi completely
-                            val process = Runtime.getRuntime().exec(
-                                arrayOf("cmd", "netpolicy", "setUidPolicy", getAppUid(ctx, packageName).toString(), "1")
+                    // Save restriction preference
+                    saveAppWifiRestriction(packageName, limitKbps)
+
+                    // Method 1: If Device Owner, use DevicePolicyManager for real network restriction
+                    val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? android.app.admin.DevicePolicyManager
+                    val adminComponent = android.content.ComponentName(ctx, com.p2pfileshare.app.admin.P2PDeviceAdminReceiver::class.java)
+                    val isDeviceOwner = dpm?.isDeviceOwnerApp(ctx.packageName) == true
+
+                    if (isDeviceOwner) {
+                        try {
+                            if (limitKbps == 0) {
+                                // Block app completely - set network policy via DevicePolicyManager
+                                // For Device Owner, we can use setPermittedInputMethods, setAccountManagement, etc.
+                                // For network restriction specifically, use setApplicationRestrictions
+                                // But the most effective: disable the app's network access
+                                // Using Android's built-in network policy
+                                val uid = getAppUid(ctx, packageName)
+                                if (uid > 0) {
+                                    // Try using cmd netpolicy (works for Device Owner)
+                                    try {
+                                        val process = Runtime.getRuntime().exec(
+                                            arrayOf("cmd", "netpolicy", "setUidPolicy", uid.toString(), "1")
+                                        )
+                                        process.waitFor()
+                                        return jsonSuccess("App $packageName blocked from network (Device Owner)", mapOf(
+                                            "package" to packageName, "action" to "blocked", "method" to "device_owner_netpolicy"
+                                        ))
+                                    } catch (e: Exception) {
+                                        // netpolicy not available, try disable approach
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("FileServer", "Device Owner restriction failed", e)
+                        }
+                    }
+
+                    // Method 2: Try shell commands (works on some devices with privileged access)
+                    if (limitKbps == 0) {
+                        // Block app from WiFi completely using cmd netpolicy
+                        var shellSuccess = false
+                        try {
+                            val uid = getAppUid(ctx, packageName)
+                            if (uid > 0) {
+                                val process = Runtime.getRuntime().exec(
+                                    arrayOf("cmd", "netpolicy", "setUidPolicy", uid.toString(), "1")
+                                )
+                                val exitCode = process.waitFor()
+                                val output = process.inputStream.bufferedReader().readText()
+                                if (exitCode == 0) {
+                                    shellSuccess = true
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Shell command not available
+                        }
+
+                        // Also try: disable the app entirely (most reliable non-root method)
+                        try {
+                            ctx.packageManager.setApplicationEnabledSetting(
+                                packageName,
+                                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
+                                0
                             )
-                            process.waitFor()
-                            return jsonSuccess("App $packageName blocked from WiFi", mapOf(
-                                "package" to packageName, "action" to "blocked"
+                            return jsonSuccess("App $packageName disabled (cannot use network or run)", mapOf(
+                                "package" to packageName,
+                                "action" to "disabled",
+                                "method" to if (shellSuccess) "netpolicy+disabled" else "disabled",
+                                "note" to "App is disabled and cannot run. This effectively blocks all network access."
                             ))
-                        } else {
-                            // Set bandwidth limit for app (using iptables for rate limiting)
+                        } catch (e: Exception) {
+                            if (shellSuccess) {
+                                return jsonSuccess("App $packageName blocked from network", mapOf(
+                                    "package" to packageName, "action" to "blocked", "method" to "netpolicy"
+                                ))
+                            }
+                            return jsonError("Cannot restrict app: no sufficient permissions. Set Device Owner for real network restriction.")
+                        }
+                    } else {
+                        // Bandwidth limiting - only possible with root or Device Owner
+                        var bandwidthSet = false
+                        try {
                             val uid = getAppUid(ctx, packageName)
                             setupBandwidthLimit(uid, limitKbps)
+                            bandwidthSet = true
+                        } catch (e: Exception) {
+                            // iptables not available
+                        }
+
+                        if (bandwidthSet) {
                             return jsonSuccess("Bandwidth limit set for $packageName: ${limitKbps}kbps", mapOf(
-                                "package" to packageName, "limitKbps" to limitKbps
+                                "package" to packageName, "limitKbps" to limitKbps, "method" to "iptables"
+                            ))
+                        } else {
+                            // Cannot set bandwidth limit, save preference
+                            return jsonSuccess("Bandwidth limit saved for $packageName: ${limitKbps}kbps (requires root/Device Owner to enforce)", mapOf(
+                                "package" to packageName, "limitKbps" to limitKbps, "method" to "preference_only",
+                                "note" to "Set Device Owner via ADB to enforce bandwidth limits"
                             ))
                         }
-                    } catch (e: Exception) {
-                        // Fallback: save restriction preference and apply when possible
-                        saveAppWifiRestriction(packageName, params["limitKbps"]?.toIntOrNull() ?: 0)
-                        return jsonSuccess("App restriction saved (requires device owner for enforcement)", mapOf(
-                            "package" to packageName,
-                            "limitKbps" to (params["limitKbps"]?.toIntOrNull() ?: 0),
-                            "note" to "Restriction will be applied when device owner is set"
-                        ))
                     }
                 }
                 "unrestrict_app" -> {
                     val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required"), "UTF-8")
+                    var anySuccess = false
+
+                    // Remove netpolicy restriction
                     try {
                         val uid = getAppUid(ctx, packageName)
-                        val process = Runtime.getRuntime().exec(
-                            arrayOf("cmd", "netpolicy", "setUidPolicy", uid.toString(), "0")
-                        )
-                        process.waitFor()
-                        removeAppWifiRestriction(packageName)
-                        return jsonSuccess("App $packageName WiFi restriction removed", null)
+                        if (uid > 0) {
+                            val process = Runtime.getRuntime().exec(
+                                arrayOf("cmd", "netpolicy", "setUidPolicy", uid.toString(), "0")
+                            )
+                            process.waitFor()
+                            anySuccess = true
+                        }
                     } catch (e: Exception) {
-                        removeAppWifiRestriction(packageName)
-                        return jsonSuccess("App restriction removed from preferences", null)
+                        // Shell not available
+                    }
+
+                    // Re-enable the app (if it was disabled as a restriction)
+                    try {
+                        ctx.packageManager.setApplicationEnabledSetting(
+                            packageName,
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                            0
+                        )
+                        anySuccess = true
+                    } catch (e: Exception) {
+                        // Cannot re-enable
+                    }
+
+                    // Remove bandwidth limits (try)
+                    try {
+                        val uid = getAppUid(ctx, packageName)
+                        if (uid > 0) {
+                            // Remove iptables rules
+                            Runtime.getRuntime().exec(arrayOf("su", "-c", "iptables -D FORWARD -m owner --uid-owner $uid -j DROP")).waitFor()
+                        }
+                    } catch (e: Exception) {
+                        // Not root
+                    }
+
+                    removeAppWifiRestriction(packageName)
+
+                    return if (anySuccess) {
+                        jsonSuccess("App $packageName WiFi restriction removed", mapOf("package" to packageName, "action" to "unrestricted"))
+                    } else {
+                        jsonSuccess("App $packageName restriction removed from preferences", mapOf("package" to packageName, "note" to "Restriction was saved as preference only"))
                     }
                 }
                 "list_restricted" -> {
                     val restrictions = getWifiRestrictions()
                     return jsonSuccess("OK", mapOf("restrictions" to restrictions))
                 }
-                else -> return jsonError("Unknown action: $action. Valid: enable, disable, restrict_app, unrestrict_app, list_restricted")
+                "enable_app" -> {
+                    // Re-enable an app that was disabled by restrict_app
+                    val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name required"), "UTF-8")
+                    try {
+                        ctx.packageManager.setApplicationEnabledSetting(
+                            packageName,
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                            0
+                        )
+                        removeAppWifiRestriction(packageName)
+                        return jsonSuccess("App $packageName re-enabled", mapOf("package" to packageName, "action" to "enabled"))
+                    } catch (e: Exception) {
+                        return jsonError("Cannot re-enable app: ${e.message}")
+                    }
+                }
+                else -> return jsonError("Unknown action: $action. Valid: enable, disable, restrict_app, unrestrict_app, enable_app, list_restricted")
             }
         } catch (e: Exception) {
             return jsonError("WiFi control failed: ${e.message}")

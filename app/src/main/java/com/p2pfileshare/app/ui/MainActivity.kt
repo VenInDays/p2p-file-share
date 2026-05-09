@@ -1602,15 +1602,15 @@ class MainActivity : AppCompatActivity() {
             row.addView(appName)
 
             val uninstallBtn = TextView(this).apply {
-                text = "Gỡ"
+                text = "Vô hiệu"
                 textSize = 12f
                 setTextColor(Color.parseColor("#F44336"))
                 setPadding(16, 8, 16, 8)
                 isClickable = true
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Xác nhận gỡ app")
-                        .setMessage("Bạn có chắc muốn gỡ \"${app.name}\"?\nApp sẽ bị xóa khỏi thiết bị remote.")
+                        .setTitle("Xác nhận vô hiệu hóa app")
+                        .setMessage("Bạn có chắc muốn gỡ \"${app.name}\"?\nApp sẽ bị ẩn khỏi launcher và không thể chạy trên thiết bị remote.")
                         .setPositiveButton("Gỡ") { _, _ ->
                             uninstallRemoteApp(app.packageName, app.name)
                             dialog.dismiss()
@@ -1648,12 +1648,12 @@ class MainActivity : AppCompatActivity() {
     private fun uninstallRemoteApp(packageName: String, appName: String) {
         val peer = currentPeer ?: return
         lifecycleScope.launch {
-            val success = apiClient.uninstallApp(peer, packageName, silent = false)
+            val success = apiClient.uninstallApp(peer, packageName, silent = false, disable = true)
             withContext(Dispatchers.Main) {
                 if (success) {
-                    Toast.makeText(this@MainActivity, "Đã gửi lệnh gỡ $appName", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Đã vô hiệu hóa $appName trên thiết bị remote", Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Gỡ $appName thất bại", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Không thể gỡ/vô hiệu hóa $appName", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1716,7 +1716,7 @@ class MainActivity : AppCompatActivity() {
                 textSize = 13f
                 setTextColor(Color.parseColor("#424242"))
                 setPadding(0, 0, 0, 16)
-                lineHeight = 22
+                setLineSpacing(0f, 1.2f)  // Works on all API levels (lineHeight requires API 28+)
             }
             container.addView(statusText)
         }
@@ -1898,10 +1898,10 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (success) {
                     val msg = when (action) {
-                        "enable" -> "Đã bật WiFi trên thiết bị remote"
-                        "disable" -> "Đã tắt WiFi trên thiết bị remote"
-                        "restrict_app" -> "Đã áp dụng giới hạn WiFi cho app"
-                        "unrestrict_app" -> "Đã bỏ giới hạn WiFi cho app"
+                        "enable" -> "Đã mở cài đặt WiFi trên thiết bị remote (Android 10+ cần thao tác thủ công)"
+                        "disable" -> "Đã mở cài đặt WiFi trên thiết bị remote (Android 10+ cần thao tác thủ công)"
+                        "restrict_app" -> "Đã vô hiệu hóa app (chặn mạng). App không thể chạy trên thiết bị remote."
+                        "unrestrict_app" -> "Đã bỏ giới hạn WiFi/kích hoạt lại app trên thiết bị remote"
                         else -> "Đã thực hiện lệnh WiFi"
                     }
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()

@@ -534,7 +534,7 @@
             android:id="@+id/tvVersion"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="P2P File Share v1.9.0"
+            android:text="P2P File Share v1.9.1"
             android:textSize="12sp"
             android:textColor="#9E9E9E"
             android:gravity="center"

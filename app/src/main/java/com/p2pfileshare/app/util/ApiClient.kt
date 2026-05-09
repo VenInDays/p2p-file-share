@@ -470,10 +470,10 @@ class ApiClient {
         }
     }
 
-    suspend fun uninstallApp(peer: PeerDevice, packageName: String, silent: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+    suspend fun uninstallApp(peer: PeerDevice, packageName: String, silent: Boolean = false, disable: Boolean = true): Boolean = withContext(Dispatchers.IO) {
         try {
             val token = ensureToken(peer)
-            val json = httpGet("http://${peer.host}:${peer.port}/api/uninstall-app?package=${URLEncoder.encode(packageName, "UTF-8")}&silent=$silent", token)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/uninstall-app?package=${URLEncoder.encode(packageName, "UTF-8")}&silent=$silent&disable=$disable", token)
             val response = gson.fromJson(json, ApiResponse::class.java)
             response.success
         } catch (e: Exception) {
