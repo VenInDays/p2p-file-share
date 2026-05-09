@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.8.0.apk"
+        FINAL_APK="P2PFileShare-v1.9.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.8.0.apk
+        path: P2PFileShare-v1.9.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.8.0-build${{ github.run_number }}"
+        TAG="v1.9.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,7 +126,7 @@ jobs:
 
         # Write release notes to file to avoid shell quoting issues
         cat > /tmp/notes.md << 'NOTES_EOF'
-        ## P2P File Share v1.8.0
+        ## P2P File Share v1.9.0
 
         ### Tinh nang moi
         - **Quan ly App** - Xem va go cai dat app tren thiet bi remote
@@ -157,6 +157,6 @@ jobs:
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.8.0.apk \
+          P2PFileShare-v1.9.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md
