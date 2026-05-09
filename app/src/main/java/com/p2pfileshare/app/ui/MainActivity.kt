@@ -169,9 +169,8 @@ class MainActivity : AppCompatActivity() {
             )
 
             val existingPeers = P2PService.getDiscoveredPeers()
-            if (existingPeers.isNotEmpty()) {
-                peerAdapter.setPeers(existingPeers)
-            }
+            // Always sync peers - even if empty (clears ghost peers from previous session)
+            peerAdapter.setPeers(existingPeers)
         } catch (e: Exception) {
             LogHelper.e("MainActivity", "onResume failed", e)
         }
@@ -1925,7 +1924,13 @@ class MainActivity : AppCompatActivity() {
 
         fun setPeers(newPeers: List<PeerDevice>) {
             peers.clear()
-            peers.addAll(newPeers)
+            // Deduplicate by host (in case both NSD and UDP discover same peer)
+            val seen = mutableSetOf<String>()
+            for (peer in newPeers) {
+                if (seen.add(peer.host)) {
+                    peers.add(peer)
+                }
+            }
             notifyDataSetChanged()
         }
 

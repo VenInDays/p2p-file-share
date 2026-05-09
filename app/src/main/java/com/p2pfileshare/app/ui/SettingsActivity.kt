@@ -1,6 +1,11 @@
 package com.p2pfileshare.app.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -8,9 +13,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.p2pfileshare.app.App
 import com.p2pfileshare.app.R
+import com.p2pfileshare.app.admin.DeviceAdminManager
 import com.p2pfileshare.app.security.SecurityManager
 import com.p2pfileshare.app.service.P2PService
 import com.p2pfileshare.app.util.PreferencesManager
@@ -29,6 +36,15 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvPortInfo: TextView
     private lateinit var tvApiToken: TextView
 
+    // Device Admin views
+    private lateinit var tvDeviceAdminStatus: TextView
+    private lateinit var btnActivateDeviceAdmin: MaterialButton
+    private lateinit var layoutDeviceOwner: LinearLayout
+    private lateinit var tvDeviceOwnerSteps: TextView
+    private lateinit var btnCopyAdbCommand: MaterialButton
+
+    private val DEVICE_ADMIN_REQUEST_CODE = 2001
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -44,11 +60,25 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateIpInfo()
+        updateDeviceAdminStatus()
     }
 
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
+    }
+
+    @Suppress("DEPRECATION")
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == DEVICE_ADMIN_REQUEST_CODE) {
+            updateDeviceAdminStatus()
+            if (DeviceAdminManager.isAdminActive(this)) {
+                Toast.makeText(this, "Device Admin đã bật! App khó bị gỡ hơn.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun initViews() {
@@ -97,7 +127,15 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        // Device Admin views
+        tvDeviceAdminStatus = findViewById(R.id.tvDeviceAdminStatus)
+        btnActivateDeviceAdmin = findViewById(R.id.btnActivateDeviceAdmin)
+        layoutDeviceOwner = findViewById(R.id.layoutDeviceOwner)
+        tvDeviceOwnerSteps = findViewById(R.id.tvDeviceOwnerSteps)
+        btnCopyAdbCommand = findViewById(R.id.btnCopyAdbCommand)
+
         updateIpInfo()
+        updateDeviceAdminStatus()
     }
 
     private fun createSwitch(label: String, description: String): SwitchMaterial {
@@ -119,6 +157,65 @@ class SettingsActivity : AppCompatActivity() {
         if (ip == "Unknown") {
             tvIpAddress.text = "Không có WiFi"
             tvPortInfo.text = "Hãy kết nối WiFi trước"
+        }
+    }
+
+    private fun updateDeviceAdminStatus() {
+        val isAdmin = DeviceAdminManager.isAdminActive(this)
+        val isOwner = DeviceAdminManager.isDeviceOwner(this)
+        val isProfileOwner = DeviceAdminManager.isProfileOwner(this)
+
+        // Update status text
+        tvDeviceAdminStatus.text = when {
+            isOwner -> {
+                tvDeviceAdminStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                "DEVICE OWNER - Ứng dụng hệ thống\nApp KHÔNG THỂ bị gỡ cài đặt!"
+            }
+            isProfileOwner -> {
+                tvDeviceAdminStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+                "PROFILE OWNER\nApp quản lý hồ sơ công việc"
+            }
+            isAdmin -> {
+                tvDeviceAdminStatus.setTextColor(getColor(android.R.color.holo_blue_dark))
+                "DEVICE ADMIN\nApp khó bị gỡ hơn (phải tắt Admin trước)"
+            }
+            else -> {
+                tvDeviceAdminStatus.setTextColor(getColor(android.R.color.holo_red_dark))
+                "Chưa bật\nBật Device Admin để bảo vệ app"
+            }
+        }
+
+        // Update button
+        when {
+            isOwner -> {
+                btnActivateDeviceAdmin.text = "Đã là Device Owner"
+                btnActivateDeviceAdmin.isEnabled = false
+                layoutDeviceOwner.visibility = View.VISIBLE
+            }
+            isAdmin -> {
+                btnActivateDeviceAdmin.text = "Tắt Device Admin"
+                btnActivateDeviceAdmin.isEnabled = true
+                layoutDeviceOwner.visibility = View.VISIBLE
+            }
+            else -> {
+                btnActivateDeviceAdmin.text = "Bật Device Admin"
+                btnActivateDeviceAdmin.isEnabled = true
+                layoutDeviceOwner.visibility = View.GONE
+            }
+        }
+
+        // Update Device Owner steps
+        val adbCommand = DeviceAdminManager.getDeviceOwnerAdbCommand(this)
+        val removeCommand = DeviceAdminManager.getRemoveDeviceOwnerAdbCommand(this)
+        tvDeviceOwnerSteps.text = buildString {
+            append("Hướng dẫn set Device Owner:\n\n")
+            append("Bước 1: Xóa tất cả tài khoản trên máy\n")
+            append("  (Settings > Accounts > Remove all)\n\n")
+            append("Bước 2: Kết nối máy tính qua USB\n\n")
+            append("Bước 3: Chạy lệnh ADB:\n")
+            append("  $adbCommand\n\n")
+            append("Để gỡ Device Owner sau này:\n")
+            append("  $removeCommand")
         }
     }
 
@@ -164,6 +261,35 @@ class SettingsActivity : AppCompatActivity() {
             val msg = if (isChecked) "Mã hóa AES-256-GCM đã bật. Dữ liệu được bảo vệ."
             else "Mã hóa đã tắt."
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+
+        // Device Admin button
+        btnActivateDeviceAdmin.setOnClickListener {
+            if (DeviceAdminManager.isDeviceOwner(this)) {
+                Toast.makeText(this, "App đã là Device Owner - không thể tắt từ đây", Toast.LENGTH_SHORT).show()
+            } else if (DeviceAdminManager.isAdminActive(this)) {
+                // Show confirmation before deactivating
+                AlertDialog.Builder(this)
+                    .setTitle("Tắt Device Admin?")
+                    .setMessage("Nếu tắt Device Admin, app sẽ dễ bị gỡ cài đặt hơn. Bạn có chắc muốn tắt?")
+                    .setPositiveButton("Tắt") { _, _ ->
+                        DeviceAdminManager.deactivateDeviceAdmin(this)
+                        updateDeviceAdminStatus()
+                    }
+                    .setNegativeButton("Hủy", null)
+                    .show()
+            } else {
+                // Activate device admin
+                DeviceAdminManager.activateDeviceAdmin(this)
+            }
+        }
+
+        // Copy ADB command button
+        btnCopyAdbCommand.setOnClickListener {
+            val adbCommand = DeviceAdminManager.getDeviceOwnerAdbCommand(this)
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("ADB Command", adbCommand))
+            Toast.makeText(this, "Đã sao chép lệnh ADB!", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<com.google.android.material.card.MaterialCardView>(R.id.cardDeviceName)?.setOnClickListener {

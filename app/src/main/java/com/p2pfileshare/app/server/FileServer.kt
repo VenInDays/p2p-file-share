@@ -92,7 +92,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             "name" to prefs.serviceName,
             "port" to listeningPort,
             "locked" to prefs.isLocked,
-            "version" to "1.7.0",
+            "version" to "1.9.0",
             "token" to SecurityManager.getApiToken() // Share token so paired devices can authenticate
         )
         return jsonSuccess("OK", data)

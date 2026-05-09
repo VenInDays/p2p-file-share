@@ -411,11 +411,130 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Device Admin / System App Protection -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="2dp"
+            app:strokeColor="#FF9800"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="#FFF3E0">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Bảo vệ ứng dụng (System App)"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#E65100" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Ngăn chặn việc gỡ cài đặt app khi cho mượn máy"
+                    android:textSize="12sp"
+                    android:textColor="#757575"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="2dp" />
+
+                <!-- Status -->
+                <TextView
+                    android:id="@+id/tvDeviceAdminStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Chưa bật"
+                    android:textSize="13sp"
+                    android:textColor="#F44336"
+                    android:fontFamily="monospace"
+                    android:layout_marginTop="8dp" />
+
+                <!-- Activate Device Admin Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnActivateDeviceAdmin"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Bật Device Admin"
+                    android:textSize="13sp"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="#FF9800" />
+
+                <!-- Device Owner Section -->
+                <LinearLayout
+                    android:id="@+id/layoutDeviceOwner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="#E0E0E0"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Nâng cấp lên Device Owner (Ứng dụng hệ thống)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#E65100" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Device Owner = App trở thành ứng dụng hệ thống, KHÔNG THỂ bị gỡ cài đặt. Cần kết nối ADB từ máy tính."
+                        android:textSize="11sp"
+                        android:textColor="#757575"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="2dp" />
+
+                    <!-- Step by step instructions -->
+                    <TextView
+                        android:id="@+id/tvDeviceOwnerSteps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textSize="11sp"
+                        android:textColor="#424242"
+                        android:fontFamily="monospace"
+                        android:background="#FFFFFF"
+                        android:padding="8dp"
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="3dp" />
+
+                    <!-- Copy ADB command button -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopyAdbCommand"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Sao chép lệnh ADB"
+                        android:textSize="12sp"
+                        app:cornerRadius="12dp"
+                        app:backgroundTint="#607D8B" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <TextView
             android:id="@+id/tvVersion"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="P2P File Share v1.8.0"
+            android:text="P2P File Share v1.9.0"
             android:textSize="12sp"
             android:textColor="#9E9E9E"
             android:gravity="center"
