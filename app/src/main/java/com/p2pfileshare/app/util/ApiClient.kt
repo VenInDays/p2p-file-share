@@ -543,6 +543,25 @@ class ApiClient {
         }
     }
 
+    /**
+     * Control WiFi with detailed message response.
+     * Returns Pair(success, message) where message contains the server's response message.
+     */
+    suspend fun controlWifiWithMessage(peer: PeerDevice, action: String, packageName: String? = null, limitKbps: Int? = null): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            var url = "http://${peer.host}:${peer.port}/api/wifi-control?action=${URLEncoder.encode(action, "UTF-8")}"
+            if (packageName != null) url += "&package=${URLEncoder.encode(packageName, "UTF-8")}"
+            if (limitKbps != null) url += "&limitKbps=$limitKbps"
+            val json = httpGet(url, token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "controlWifiWithMessage failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
     suspend fun getWifiRestrictions(peer: PeerDevice): List<AppWifiRestriction>? = withContext(Dispatchers.IO) {
         try {
             val token = ensureToken(peer)

@@ -165,22 +165,50 @@ object DeviceAdminManager {
     }
 
     /**
-     * When Device Owner: silently uninstall an app.
+     * When Device Owner: enable WiFi using shell command.
+     * Works on all Android versions for Device Owner apps.
+     */
+    fun enableWifi(context: Context): Boolean {
+        if (!isDeviceOwner(context)) return false
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("svc", "wifi", "enable"))
+            val exitCode = process.waitFor()
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to enable WiFi", e)
+            false
+        }
+    }
+
+    /**
+     * When Device Owner: disable WiFi using shell command.
+     * Works on all Android versions for Device Owner apps.
+     */
+    fun disableWifi(context: Context): Boolean {
+        if (!isDeviceOwner(context)) return false
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("svc", "wifi", "disable"))
+            val exitCode = process.waitFor()
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to disable WiFi", e)
+            false
+        }
+    }
+
+    /**
+     * When Device Owner: silently uninstall an app using pm command.
      * This does NOT show any confirmation dialog.
      */
     fun silentUninstallApp(context: Context, packageName: String): Boolean {
         if (!isDeviceOwner(context)) return false
 
         return try {
-            val dpm = getDpm(context)
-            // Device Owner can call package manager to uninstall
-            val packageManager = context.packageManager
-            val intent = Intent(Intent.ACTION_DELETE).apply {
-                data = android.net.Uri.parse("package:$packageName")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            true
+            // Use pm uninstall which works silently for Device Owner
+            val process = Runtime.getRuntime().exec(arrayOf("pm", "uninstall", packageName))
+            val exitCode = process.waitFor()
+            val output = process.inputStream.bufferedReader().readText()
+            exitCode == 0 || output.contains("Success")
         } catch (e: Exception) {
             Log.e(TAG, "Silent uninstall failed for $packageName", e)
             false

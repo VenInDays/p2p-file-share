@@ -1675,7 +1675,13 @@ class MainActivity : AppCompatActivity() {
                 val restrictions = apiClient.getWifiRestrictions(peer)
                 withContext(Dispatchers.Main) {
                     showLoading(false)
-                    showWifiControlDialog(wifiStatus, restrictions)
+                    try {
+                        showWifiControlDialog(wifiStatus, restrictions)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "BottomSheetDialog crash", e)
+                        // Fallback: use AlertDialog instead of BottomSheetDialog
+                        showWifiControlAlertDialog(wifiStatus, restrictions)
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -1711,12 +1717,12 @@ class MainActivity : AppCompatActivity() {
                         "\nKết nối: ${if (status.connected) "Có" else "Không"}" +
                         (if (status.connected) "\nSSID: ${status.ssid}\nTốc độ: ${status.linkSpeed} Mbps\nTín hiệu: ${status.signalStrength} dBm\nIP: ${status.ipAddress}" else "") +
                         "\n\nThống kê dữ liệu:" +
-                        "\n  Tải xuống: ${"%.1f".format(status.totalRxBytes / (1024.0 * 1024))} MB" +
-                        "\n  Tải lên: ${"%.1f".format(status.totalTxBytes / (1024.0 * 1024))} MB"
+                        "\n  Tải xuống: ${String.format("%.1f", status.totalRxBytes / (1024.0 * 1024))} MB" +
+                        "\n  Tải lên: ${String.format("%.1f", status.totalTxBytes / (1024.0 * 1024))} MB"
                 textSize = 13f
                 setTextColor(Color.parseColor("#424242"))
                 setPadding(0, 0, 0, 16)
-                setLineSpacing(0f, 1.2f)  // Works on all API levels (lineHeight requires API 28+)
+                setLineSpacing(0f, 1.2f)
             }
             container.addView(statusText)
         }
@@ -1840,6 +1846,62 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    /**
+     * Fallback WiFi control dialog using AlertDialog instead of BottomSheetDialog.
+     * Used when BottomSheetDialog crashes (e.g., Android 8.1.0 compatibility issue).
+     */
+    private fun showWifiControlAlertDialog(wifiStatus: ApiClient.WifiStatus?, restrictions: List<ApiClient.AppWifiRestriction>?) {
+        val message = buildString {
+            val status = wifiStatus
+            if (status != null) {
+                append("WiFi: ${if (status.wifiEnabled) "BẬT" else "TẮT"}\n")
+                append("Kết nối: ${if (status.connected) "Có" else "Không"}\n")
+                if (status.connected) {
+                    append("SSID: ${status.ssid}\n")
+                    append("Tốc độ: ${status.linkSpeed} Mbps\n")
+                }
+            }
+            append("\n--- App bị giới hạn ---\n")
+            if (restrictions.isNullOrEmpty()) {
+                append("Chưa có app nào bị giới hạn")
+            } else {
+                restrictions.forEach { r ->
+                    append("• ${r.name}: ${if (r.limitKbps == 0) "Chặn hoàn toàn" else "Giới hạn ${r.limitKbps} kbps"}\n")
+                }
+            }
+        }
+
+        val options = arrayOf("Bật WiFi", "Tắt WiFi", "+ Thêm giới hạn WiFi cho app", "Bỏ giới hạn app")
+        AlertDialog.Builder(this)
+            .setTitle("Điều khiển WiFi")
+            .setMessage(message)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> controlRemoteWifi("enable")
+                    1 -> controlRemoteWifi("disable")
+                    2 -> showAddWifiRestrictionDialog()
+                    3 -> {
+                        if (!restrictions.isNullOrEmpty()) {
+                            val appNames = restrictions.map { "${it.name} (${it.status})" }.toTypedArray()
+                            var selectedIdx = 0
+                            AlertDialog.Builder(this)
+                                .setTitle("Chọn app để bỏ giới hạn")
+                                .setSingleChoiceItems(appNames, 0) { _, i -> selectedIdx = i }
+                                .setPositiveButton("Bỏ giới hạn") { _, _ ->
+                                    controlRemoteWifi("unrestrict_app", restrictions[selectedIdx].packageName)
+                                }
+                                .setNegativeButton("Hủy", null)
+                                .show()
+                        } else {
+                            Toast.makeText(this, "Không có app nào bị giới hạn", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
     private fun showAddWifiRestrictionDialog() {
         val peer = currentPeer ?: return
         showLoading(true)
@@ -1894,19 +1956,20 @@ class MainActivity : AppCompatActivity() {
     private fun controlRemoteWifi(action: String, packageName: String? = null, limitKbps: Int? = null) {
         val peer = currentPeer ?: return
         lifecycleScope.launch {
-            val success = apiClient.controlWifi(peer, action, packageName, limitKbps)
+            val result = apiClient.controlWifiWithMessage(peer, action, packageName, limitKbps)
             withContext(Dispatchers.Main) {
-                if (success) {
+                if (result.first) {
                     val msg = when (action) {
-                        "enable" -> "Đã mở cài đặt WiFi trên thiết bị remote (Android 10+ cần thao tác thủ công)"
-                        "disable" -> "Đã mở cài đặt WiFi trên thiết bị remote (Android 10+ cần thao tác thủ công)"
-                        "restrict_app" -> "Đã vô hiệu hóa app (chặn mạng). App không thể chạy trên thiết bị remote."
-                        "unrestrict_app" -> "Đã bỏ giới hạn WiFi/kích hoạt lại app trên thiết bị remote"
-                        else -> "Đã thực hiện lệnh WiFi"
+                        "enable" -> result.second ?: "Đã bật WiFi trên thiết bị remote"
+                        "disable" -> result.second ?: "Đã tắt WiFi trên thiết bị remote"
+                        "restrict_app" -> result.second ?: "Đã vô hiệu hóa app (chặn mạng)"
+                        "unrestrict_app" -> result.second ?: "Đã bỏ giới hạn WiFi/kích hoạt lại app"
+                        else -> result.second ?: "Đã thực hiện lệnh WiFi"
                     }
-                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Thao tác thất bại", Toast.LENGTH_SHORT).show()
+                    val errorMsg = result.second ?: "Thao tác thất bại"
+                    Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
                 }
             }
         }
