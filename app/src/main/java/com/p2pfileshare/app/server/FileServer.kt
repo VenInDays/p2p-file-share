@@ -641,13 +641,31 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             val isDeviceOwner = dpm?.isDeviceOwnerApp(ctx.packageName) == true
 
             if (isDeviceOwner && silent) {
-                // Device Owner can silently uninstall apps
+                // Device Owner can silently uninstall apps via pm command
+                // (pm uninstall works for Device Owner without user confirmation)
                 try {
-                    dpm.uninstallPackageAdmin(adminComponent, packageName)
-                    return jsonSuccess("App uninstalled silently (Device Owner)", mapOf("package" to packageName, "method" to "device_owner"))
+                    val process = Runtime.getRuntime().exec(arrayOf("pm", "uninstall", packageName))
+                    val exitCode = process.waitFor()
+                    val output = process.inputStream.bufferedReader().readText()
+                    if (exitCode == 0 || output.contains("Success")) {
+                        return jsonSuccess("App uninstalled silently (Device Owner)", mapOf("package" to packageName, "method" to "device_owner_pm"))
+                    }
+                    // pm uninstall may fail for system apps, try disabling instead
                 } catch (e: Exception) {
-                    // Fall through to other methods
-                    android.util.Log.w("FileServer", "Device Owner uninstall failed, trying alternatives", e)
+                    android.util.Log.w("FileServer", "Device Owner pm uninstall failed", e)
+                }
+                // Try disabling if uninstall fails
+                try {
+                    ctx.packageManager.setApplicationEnabledSetting(
+                        packageName,
+                        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
+                        0
+                    )
+                    return jsonSuccess("App disabled (Device Owner - silent uninstall not available for this app)", mapOf(
+                        "package" to packageName, "method" to "device_owner_disabled"
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.w("FileServer", "Device Owner disable also failed", e)
                 }
             }
 

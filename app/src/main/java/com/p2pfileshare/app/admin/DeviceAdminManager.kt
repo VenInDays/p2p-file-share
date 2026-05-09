@@ -192,16 +192,17 @@ object DeviceAdminManager {
      * This hides the app but keeps it installed.
      */
     fun setAppEnabled(context: Context, packageName: String, enabled: Boolean): Boolean {
-        if (!isDeviceOwner(context)) return false
+        if (!isDeviceOwner(context) && !isAdminActive(context)) return false
 
         return try {
-            val dpm = getDpm(context)
-            val admin = getAdminComponent(context)
-            if (enabled) {
-                dpm.enablePackageAdmin(admin, packageName)
+            // Use PackageManager to enable/disable - works for Device Owner without hidden APIs
+            val state = if (enabled) {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
-                dpm.disablePackageAdmin(admin, packageName)
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
             }
+            context.packageManager.setApplicationEnabledSetting(packageName, state, 0)
+            Log.d(TAG, "App $packageName ${if (enabled) "enabled" else "disabled"} successfully")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to ${if (enabled) "enable" else "disable"} app $packageName", e)
