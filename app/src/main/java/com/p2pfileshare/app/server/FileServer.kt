@@ -1019,7 +1019,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             val data = mutableMapOf<String, Any>()
 
             data["isPlaying"] = AudioPlayerManager.isPlaying()
-            data["currentFile"] = AudioPlayerManager.getCurrentFile()
+            data["currentFile"] = AudioPlayerManager.getCurrentFile() ?: ""
 
             // Get volume info
             try {
