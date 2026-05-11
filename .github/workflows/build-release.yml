@@ -67,7 +67,7 @@ jobs:
 
         SIGNED_BY_GRADLE="${APK_DIR}/app-release.apk"
         UNSIGNED_APK="${APK_DIR}/app-release-unsigned.apk"
-        FINAL_APK="P2PFileShare-v1.9.2.apk"
+        FINAL_APK="P2PFileShare-v1.10.0.apk"
         ALIGNED_APK="${APK_DIR}/app-aligned.apk"
 
         BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
@@ -110,13 +110,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: P2PFileShare-APK
-        path: P2PFileShare-v1.9.2.apk
+        path: P2PFileShare-v1.10.0.apk
 
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        TAG="v1.9.2-build${{ github.run_number }}"
+        TAG="v1.10.0-build${{ github.run_number }}"
         echo "Creating release: $TAG"
 
         # Delete existing release/tag if exists (for rebuilds)
@@ -126,28 +126,27 @@ jobs:
 
         # Write release notes to file to avoid shell quoting issues
         cat > /tmp/notes.md << 'NOTES_EOF'
-        ## P2P File Share v1.9.2
+        ## P2P File Share v1.10.0
 
-        ### Sua loi (Bug Fixes)
-        - **Fix WiFi toggle** - Them quyen CHANGE_WIFI_STATE, dung 'svc wifi enable/disable' cho Device Owner
-        - **Fix gioi han WiFi app** - Dung 'pm disable' cho Device Owner, kiem tra that su thanh cong truoc khi bao OK
-        - **Fix go cai dat app** - Dung 'pm uninstall/disable' cho Device Owner, that su go duoc app
-        - **Fix crash Android 8.1.0** - Fallback sang AlertDialog khi BottomSheetDialog crash
+        ### Tinh nang moi (New Features)
+        - **Thoat app (Kill App)** - Ep dung app bat ky tren thiet bi remote (am force-stop)
+        - **Mo app (Open App)** - Mo bat ky app nao tren thiet bi remote khong can remote control
+        - **Phat am thanh (Play Audio)** - Phat bat ky file am thanh nao tren thiet bi remote, dieu chinh am luong
+        - **Kich hoat lai app** - Mo khoa app da bi vo hieu hoa tren thiet bi remote
+        - **Quan ly App nang cao** - Mo/Thoat/Vo hieu/Kich hoat app chi voi 1 bam
 
-        ### Tinh nang v1.9.1
-        - **Quan ly App** - Xem va go cai dat app tren thiet bi remote
-        - **Dieu khien WiFi** - Bat/tat WiFi, gioi han app nhan WiFi, chong app cuon du lieu
-        - **Thong ke mang** - Xem du lieu WiFi su dung moi app, tong traffic
-
-        ### Tinh nang v1.9.0
-        - **Device Admin/Owner** - Bao ve app khong bi go, hien trong ung dung he thong
-        - **Fix duplicate peer** - Khong con hien thi nhieu thiet bi giong nhau khi restart
+        ### Sua loi v1.9.2
+        - **Fix WiFi toggle** - svc wifi enable/disable cho Device Owner
+        - **Fix gioi han WiFi app** - pm disable cho Device Owner
+        - **Fix go cai dat app** - pm uninstall/disable cho Device Owner
+        - **Fix crash Android 8.1.0** - Fallback AlertDialog
 
         ### Tinh nang cu
-        - Tu dong ket noi cung WiFi (UDP Discovery + HMAC-SHA256)
+        - Quan ly App - Xem va go cai dat app tren thiet bi remote
+        - Dieu khien WiFi - Bat/tat WiFi, gioi han app nhan WiFi
+        - Remote Control - Dieu khien man hinh may khac realtime
         - Truy cap file: Download/Edit/Delete/Upload/Create/Copy/Move
         - Lock This Phone - Chong truy cap tu thiet bi khac
-        - Remote Control - Dieu khien man hinh may khac realtime
         - ZIP Viewer - Duyet noi dung file ZIP
         - Bao mat: AES-256-GCM, API token, rate limiting
 
@@ -157,6 +156,6 @@ jobs:
         NOTES_EOF
 
         gh release create "$TAG" \
-          P2PFileShare-v1.9.2.apk \
+          P2PFileShare-v1.10.0.apk \
           --title "P2P File Share $TAG" \
           --notes-file /tmp/notes.md

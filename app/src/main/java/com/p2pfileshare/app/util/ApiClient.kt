@@ -483,6 +483,99 @@ class ApiClient {
     }
 
     // ========================
+    // APP KILL / OPEN API
+    // ========================
+
+    suspend fun killApp(peer: PeerDevice, packageName: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/kill-app?package=${URLEncoder.encode(packageName, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "killApp failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun openApp(peer: PeerDevice, packageName: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/open-app?package=${URLEncoder.encode(packageName, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "openApp failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    // ========================
+    // AUDIO CONTROL API
+    // ========================
+
+    data class AudioStatus(
+        val isPlaying: Boolean,
+        val currentFile: String?,
+        val volume: Int
+    )
+
+    suspend fun playAudio(peer: PeerDevice, path: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/play-audio?action=play&path=${URLEncoder.encode(path, "UTF-8")}", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "playAudio failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun stopAudio(peer: PeerDevice): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/play-audio?action=stop", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "stopAudio failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun setAudioVolume(peer: PeerDevice, volume: Int): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/play-audio?action=volume&volume=$volume", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            Pair(response.success, response.message)
+        } catch (e: Exception) {
+            Log.e(tag, "setAudioVolume failed", e)
+            Pair(false, "Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun getAudioStatus(peer: PeerDevice): AudioStatus? = withContext(Dispatchers.IO) {
+        try {
+            val token = ensureToken(peer)
+            val json = httpGet("http://${peer.host}:${peer.port}/api/audio-status", token)
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataMap = gson.fromJson(gson.toJson(response.data), Map::class.java)
+                AudioStatus(
+                    isPlaying = dataMap["isPlaying"] as? Boolean ?: false,
+                    currentFile = dataMap["currentFile"] as? String,
+                    volume = (dataMap["volume"] as? Number)?.toInt() ?: 50
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "getAudioStatus failed", e)
+            null
+        }
+    }
+
+    // ========================
     // WIFI CONTROL API
     // ========================
 

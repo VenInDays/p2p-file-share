@@ -213,6 +213,10 @@ class MainActivity : AppCompatActivity() {
                 showAppManager()
                 true
             }
+            R.id.action_play_audio -> {
+                showAudioControl()
+                true
+            }
             R.id.action_wifi_control -> {
                 showWifiControl()
                 true
@@ -1585,42 +1589,96 @@ class MainActivity : AppCompatActivity() {
 
         for (app in apps) {
             val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.VERTICAL
                 setPadding(0, 10, 0, 10)
                 isClickable = true
                 isFocusable = true
                 tag = app.name.lowercase()
             }
 
+            // App name row
+            val nameRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
             val appName = TextView(this).apply {
-                text = app.name
+                text = "${if (!app.enabled) "⛔ " else ""}${app.name}"
                 textSize = 14f
-                setTextColor(Color.parseColor("#212121"))
+                setTextColor(Color.parseColor(if (app.enabled) "#212121" else "#9E9E9E"))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
-            row.addView(appName)
+            nameRow.addView(appName)
+            row.addView(nameRow)
 
-            val uninstallBtn = TextView(this).apply {
-                text = "Vô hiệu"
-                textSize = 12f
-                setTextColor(Color.parseColor("#F44336"))
-                setPadding(16, 8, 16, 8)
+            // Buttons row
+            val btnRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(0, 4, 0, 0)
+            }
+
+            // Open app button
+            val openBtn = TextView(this).apply {
+                text = "Mở"
+                textSize = 11f
+                setTextColor(Color.parseColor("#1565C0"))
+                setPadding(16, 6, 16, 6)
+                isClickable = true
+                setOnClickListener {
+                    openRemoteApp(app.packageName, app.name)
+                    dialog.dismiss()
+                }
+            }
+            btnRow.addView(openBtn)
+
+            // Kill app button
+            val killBtn = TextView(this).apply {
+                text = "Thoát"
+                textSize = 11f
+                setTextColor(Color.parseColor("#FF9800"))
+                setPadding(16, 6, 16, 6)
                 isClickable = true
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Xác nhận vô hiệu hóa app")
-                        .setMessage("Bạn có chắc muốn gỡ \"${app.name}\"?\nApp sẽ bị ẩn khỏi launcher và không thể chạy trên thiết bị remote.")
-                        .setPositiveButton("Gỡ") { _, _ ->
-                            uninstallRemoteApp(app.packageName, app.name)
-                            dialog.dismiss()
+                        .setTitle("Xác nhận tắt app")
+                        .setMessage("Bạn có chắc muốn tắt \"${app.name}\"?\nApp sẽ bị dừng chạy trên thiết bị remote.")
+                        .setPositiveButton("Tắt") { _, _ ->
+                            killRemoteApp(app.packageName, app.name)
                         }
                         .setNegativeButton("Hủy", null)
                         .show()
                 }
             }
-            row.addView(uninstallBtn)
+            btnRow.addView(killBtn)
 
+            // Disable/uninstall button
+            val disableBtn = TextView(this).apply {
+                text = if (app.enabled) "Vô hiệu" else "Kích hoạt"
+                textSize = 11f
+                setTextColor(Color.parseColor(if (app.enabled) "#F44336" else "#4CAF50"))
+                setPadding(16, 6, 16, 6)
+                isClickable = true
+                setOnClickListener {
+                    if (app.enabled) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Xác nhận vô hiệu hóa app")
+                            .setMessage("Bạn có chắc muốn vô hiệu hóa \"${app.name}\"?\nApp sẽ bị ẩn khỏi launcher và không thể chạy trên thiết bị remote.")
+                            .setPositiveButton("Vô hiệu") { _, _ ->
+                                uninstallRemoteApp(app.packageName, app.name)
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton("Hủy", null)
+                            .show()
+                    } else {
+                        enableRemoteApp(app.packageName, app.name)
+                        dialog.dismiss()
+                    }
+                }
+            }
+            btnRow.addView(disableBtn)
+
+            row.addView(btnRow)
             listContainer.addView(row)
             appRows.add(row)
         }
@@ -1656,6 +1714,320 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, "Không thể gỡ/vô hiệu hóa $appName", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    private fun openRemoteApp(packageName: String, appName: String) {
+        val peer = currentPeer ?: return
+        lifecycleScope.launch {
+            val (success, msg) = apiClient.openApp(peer, packageName)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity, "Đã mở $appName trên thiết bị remote", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, msg ?: "Không thể mở $appName", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun killRemoteApp(packageName: String, appName: String) {
+        val peer = currentPeer ?: return
+        lifecycleScope.launch {
+            val (success, msg) = apiClient.killApp(peer, packageName)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity, "Đã tắt $appName trên thiết bị remote", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, msg ?: "Không thể tắt $appName", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun enableRemoteApp(packageName: String, appName: String) {
+        val peer = currentPeer ?: return
+        lifecycleScope.launch {
+            val (success, msg) = apiClient.controlWifiWithMessage(peer, "enable_app", packageName)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity, "Đã kích hoạt lại $appName trên thiết bị remote", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, msg ?: "Không thể kích hoạt lại $appName", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // ========== Audio Control ==========
+
+    private fun showAudioControl() {
+        val peer = currentPeer
+        if (peer == null) {
+            Toast.makeText(this, "Hãy kết nối với thiết bị trước", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Show audio control dialog with file browser
+        showAudioFileDialog(peer)
+    }
+
+    private fun showAudioFileDialog(peer: com.p2pfileshare.app.model.PeerDevice) {
+        showLoading(true)
+        lifecycleScope.launch {
+            try {
+                // First get audio status
+                val audioStatus = apiClient.getAudioStatus(peer)
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    showAudioControlDialog(peer, audioStatus)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    showAudioControlDialog(peer, null)
+                }
+            }
+        }
+    }
+
+    private fun showAudioControlDialog(peer: com.p2pfileshare.app.model.PeerDevice, audioStatus: ApiClient.AudioStatus?) {
+        val dialog = try {
+            BottomSheetDialog(this)
+        } catch (e: Exception) {
+            null
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 64)
+        }
+
+        // Title
+        val title = TextView(this).apply {
+            text = "Phát âm thanh"
+            textSize = 18f
+            setTextColor(Color.parseColor("#212121"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, 16)
+        }
+        container.addView(title)
+
+        // Current status
+        val statusView = TextView(this).apply {
+            text = if (audioStatus != null && audioStatus.isPlaying) {
+                "Đang phát: ${audioStatus.currentFile?.substringAfterLast("/") ?: "unknown"}"
+            } else {
+                "Chưa phát âm thanh nào"
+            }
+            textSize = 13f
+            setTextColor(Color.parseColor("#424242"))
+            setPadding(0, 0, 0, 8)
+        }
+        container.addView(statusView)
+
+        // Volume control
+        val volumeLabel = TextView(this).apply {
+            text = "Âm lượng: ${audioStatus?.volume ?: 50}%"
+            textSize = 13f
+            setTextColor(Color.parseColor("#212121"))
+            setPadding(0, 8, 0, 4)
+        }
+        container.addView(volumeLabel)
+
+        val volumeSeekBar = android.widget.SeekBar(this).apply {
+            max = 100
+            progress = audioStatus?.volume ?: 50
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    volumeLabel.text = "Âm lượng: $progress%"
+                }
+                override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                    val vol = seekBar?.progress ?: return
+                    setRemoteVolume(peer, vol)
+                }
+            })
+        }
+        container.addView(volumeSeekBar)
+
+        // Stop button
+        if (audioStatus != null && audioStatus.isPlaying) {
+            val stopBtn = TextView(this).apply {
+                text = "Dừng phát"
+                textSize = 13f
+                setTextColor(Color.parseColor("#FFFFFF"))
+                setBackgroundColor(Color.parseColor("#F44336"))
+                setPadding(24, 12, 24, 12)
+                isClickable = true
+                setOnClickListener {
+                    stopRemoteAudio(peer)
+                    dialog?.dismiss()
+                }
+            }
+            container.addView(stopBtn)
+        }
+
+        // Browse audio files button
+        val browseBtn = TextView(this).apply {
+            text = "Chọn file âm thanh từ thiết bị remote"
+            textSize = 14f
+            setTextColor(Color.parseColor("#1565C0"))
+            setPadding(0, 16, 0, 8)
+            isClickable = true
+            setOnClickListener {
+                dialog?.dismiss()
+                browseAudioFiles(peer)
+            }
+        }
+        container.addView(browseBtn)
+
+        // Enter path manually
+        val manualLabel = TextView(this).apply {
+            text = "Hoặc nhập đường dẫn file:"
+            textSize = 12f
+            setTextColor(Color.parseColor("#757575"))
+            setPadding(0, 8, 0, 4)
+        }
+        container.addView(manualLabel)
+
+        val pathInput = EditText(this).apply {
+            hint = "/storage/emulated/0/Music/song.mp3"
+            textSize = 13f
+            setPadding(8, 8, 8, 8)
+        }
+        container.addView(pathInput)
+
+        val playBtn = TextView(this).apply {
+            text = "Phát"
+            textSize = 13f
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setBackgroundResource(R.drawable.bg_chip_selected)
+            setPadding(24, 12, 24, 12)
+            isClickable = true
+            setOnClickListener {
+                val path = pathInput.text.toString().trim()
+                if (path.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Nhập đường dẫn file âm thanh", Toast.LENGTH_SHORT).show()
+                } else {
+                    playRemoteAudio(peer, path)
+                    dialog?.dismiss()
+                }
+            }
+        }
+        container.addView(playBtn)
+
+        if (dialog != null) {
+            dialog.setContentView(container)
+            dialog.show()
+        } else {
+            // Fallback to AlertDialog
+            val scrollContainer = ScrollView(this).apply {
+                addView(container)
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Phát âm thanh")
+                .setView(scrollContainer)
+                .setNegativeButton("Đóng", null)
+                .show()
+        }
+    }
+
+    private fun browseAudioFiles(peer: com.p2pfileshare.app.model.PeerDevice) {
+        showLoading(true)
+        lifecycleScope.launch {
+            try {
+                // Browse common audio directories
+                val paths = listOf("/storage/emulated/0/Music", "/storage/emulated/0/Download", "/storage/emulated/0/Ringtones", "/storage/emulated/0/Notifications")
+                val allAudioFiles = mutableListOf<com.p2pfileshare.app.model.FileItem>()
+
+                for (path in paths) {
+                    try {
+                        val dirInfo = apiClient.listFiles(peer, path)
+                        if (dirInfo != null) {
+                            dirInfo.files.filter {
+                                it.mimeType.startsWith("audio/") ||
+                                it.name.lowercase().endsWith(".mp3") ||
+                                it.name.lowercase().endsWith(".wav") ||
+                                it.name.lowercase().endsWith(".ogg") ||
+                                it.name.lowercase().endsWith(".flac") ||
+                                it.name.lowercase().endsWith(".aac") ||
+                                it.name.lowercase().endsWith(".m4a") ||
+                                it.name.lowercase().endsWith(".wma")
+                            }.forEach { allAudioFiles.add(it) }
+                        }
+                    } catch (e: Exception) {
+                        // Directory not accessible
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    if (allAudioFiles.isEmpty()) {
+                        Toast.makeText(this@MainActivity, "Không tìm thấy file âm thanh trên thiết bị remote", Toast.LENGTH_SHORT).show()
+                    } else {
+                        showAudioFileList(peer, allAudioFiles)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
+                    Toast.makeText(this@MainActivity, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun showAudioFileList(peer: com.p2pfileshare.app.model.PeerDevice, files: List<com.p2pfileshare.app.model.FileItem>) {
+        val fileNames = files.map { "${it.name} (${formatFileSize(it.size)})" }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Chọn file âm thanh (${files.size} files)")
+            .setItems(fileNames) { _, which ->
+                val selectedFile = files[which]
+                playRemoteAudio(peer, selectedFile.path)
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun playRemoteAudio(peer: com.p2pfileshare.app.model.PeerDevice, path: String) {
+        lifecycleScope.launch {
+            val (success, msg) = apiClient.playAudio(peer, path)
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity, msg ?: "Đang phát âm thanh", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, msg ?: "Không thể phát âm thanh", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun stopRemoteAudio(peer: com.p2pfileshare.app.model.PeerDevice) {
+        lifecycleScope.launch {
+            val (success, msg) = apiClient.stopAudio(peer)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, msg ?: (if (success) "Đã dừng" else "Lỗi"), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setRemoteVolume(peer: com.p2pfileshare.app.model.PeerDevice, volume: Int) {
+        lifecycleScope.launch {
+            val (_, msg) = apiClient.setAudioVolume(peer, volume)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, msg ?: "Âm lượng: $volume%", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+            bytes < 1024L * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
+            else -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
         }
     }
 

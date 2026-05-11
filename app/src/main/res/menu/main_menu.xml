@@ -32,6 +32,11 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_play_audio"
+        android:title="Phát âm thanh"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_wifi_control"
         android:title="Điều khiển WiFi"
         app:showAsAction="never" />

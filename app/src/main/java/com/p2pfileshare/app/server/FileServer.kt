@@ -76,6 +76,11 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
                 // App management
                 uri == "/api/apps" -> handleListApps(params)
                 uri == "/api/uninstall-app" -> handleUninstallApp(params)
+                uri == "/api/kill-app" -> handleKillApp(params)
+                uri == "/api/open-app" -> handleOpenApp(params)
+                // Audio control
+                uri == "/api/play-audio" -> handlePlayAudio(params)
+                uri == "/api/audio-status" -> handleAudioStatus()
                 // WiFi control
                 uri == "/api/wifi-status" -> handleWifiStatus()
                 uri == "/api/wifi-control" -> handleWifiControl(params)
@@ -92,7 +97,7 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             "name" to prefs.serviceName,
             "port" to listeningPort,
             "locked" to prefs.isLocked,
-            "version" to "1.9.2",
+            "version" to "1.10.0",
             "token" to SecurityManager.getApiToken() // Share token so paired devices can authenticate
         )
         return jsonSuccess("OK", data)
@@ -748,6 +753,291 @@ class FileServer(port: Int, private val prefs: PreferencesManager) : NanoHTTPD(p
             }
         } catch (e: Exception) {
             return jsonError("Failed to uninstall app: ${e.message}")
+        }
+    }
+
+    // ========================
+    // APP KILL / OPEN / AUDIO ENDPOINTS
+    // ========================
+
+    /**
+     * Force-stop (kill) an app by package name.
+     * Uses 'am force-stop' which works for Device Owner and system apps.
+     * Params: package = "com.example.app"
+     */
+    private fun handleKillApp(params: Map<String, String>): Response {
+        try {
+            val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name is required"), "UTF-8")
+
+            if (packageName == "com.p2pfileshare.app") {
+                return jsonError("Không thể tắt P2P File Share")
+            }
+
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            // Verify package exists
+            try {
+                ctx.packageManager.getApplicationInfo(packageName, 0)
+            } catch (e: Exception) {
+                return jsonError("App không tồn tại: $packageName")
+            }
+
+            // Method 1: am force-stop (works for Device Owner, may work for others too)
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("am", "force-stop", packageName))
+                val exitCode = process.waitFor()
+                if (exitCode == 0) {
+                    return jsonSuccess("Đã tắt app $packageName", mapOf(
+                        "package" to packageName, "action" to "force_stopped", "method" to "am_force_stop"
+                    ))
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("FileServer", "am force-stop failed", e)
+            }
+
+            // Method 2: kill background processes via ActivityManager
+            try {
+                val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                am?.killBackgroundProcesses(packageName)
+                return jsonSuccess("Đã tắt tiến trình nền của $packageName", mapOf(
+                    "package" to packageName, "action" to "killed_background", "method" to "kill_background_processes"
+                ))
+            } catch (e: Exception) {
+                return jsonError("Không thể tắt app $packageName: ${e.message}")
+            }
+        } catch (e: Exception) {
+            return jsonError("Failed to kill app: ${e.message}")
+        }
+    }
+
+    /**
+     * Open (launch) an app by package name.
+     * Uses PackageManager to find the launch intent and starts it.
+     * Params: package = "com.example.app"
+     */
+    private fun handleOpenApp(params: Map<String, String>): Response {
+        try {
+            val packageName = URLDecoder.decode(params["package"] ?: return jsonError("Package name is required"), "UTF-8")
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            // Verify package exists
+            try {
+                ctx.packageManager.getApplicationInfo(packageName, 0)
+            } catch (e: Exception) {
+                return jsonError("App không tồn tại: $packageName")
+            }
+
+            // Check if app is enabled
+            try {
+                val appInfo = ctx.packageManager.getApplicationInfo(packageName, 0)
+                if (!appInfo.enabled) {
+                    return jsonError("App $packageName đang bị vô hiệu hóa. Cần kích hoạt lại trước khi mở.")
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+
+            // Method 1: Use PackageManager.getLaunchIntentForPackage (standard way)
+            val launchIntent = ctx.packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                try {
+                    ctx.startActivity(launchIntent)
+                    val appName = try {
+                        ctx.packageManager.getApplicationInfo(packageName, 0)
+                        ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(packageName, 0)).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                    return jsonSuccess("Đã mở app $appName", mapOf(
+                        "package" to packageName, "action" to "launched", "method" to "launch_intent"
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.w("FileServer", "startActivity failed for launch intent", e)
+                }
+            }
+
+            // Method 2: Try using 'am start' with the package's main activity
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf(
+                    "am", "start", "-n", "$packageName/${packageName}.MainActivity",
+                    "--activity-new-task"
+                ))
+                val exitCode = process.waitFor()
+                val output = process.inputStream.bufferedReader().readText()
+                if (exitCode == 0 || output.contains("Starting")) {
+                    return jsonSuccess("Đã mở app $packageName", mapOf(
+                        "package" to packageName, "action" to "launched", "method" to "am_start"
+                    ))
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("FileServer", "am start failed", e)
+            }
+
+            // Method 3: Try monkey command to launch the app
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf(
+                    "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"
+                ))
+                val exitCode = process.waitFor()
+                if (exitCode == 0) {
+                    return jsonSuccess("Đã mở app $packageName", mapOf(
+                        "package" to packageName, "action" to "launched", "method" to "monkey"
+                    ))
+                }
+            } catch (e: Exception) {
+                // monkey command not available
+            }
+
+            return jsonError("Không thể mở app $packageName - không tìm thấy activity khởi chạy")
+        } catch (e: Exception) {
+            return jsonError("Failed to open app: ${e.message}")
+        }
+    }
+
+    /**
+     * Play an audio file on the remote device.
+     * Uses Android's MediaPlayer via an intent or starts playback in a foreground service.
+     * Params: path = "/storage/emulated/0/Music/song.mp3", action = "play" | "stop" | "volume"
+     *         volume = "50" (0-100, for volume action)
+     */
+    private fun handlePlayAudio(params: Map<String, String>): Response {
+        try {
+            val action = URLDecoder.decode(params["action"] ?: "play", "UTF-8")
+            val ctx = App.instance ?: return jsonError("App context not available")
+
+            when (action) {
+                "play" -> {
+                    var path = URLDecoder.decode(params["path"] ?: return jsonError("Đường dẫn file âm thanh là bắt buộc"), "UTF-8")
+                    val file = File(path)
+
+                    if (!file.exists()) {
+                        return jsonError("File không tồn tại: $path")
+                    }
+
+                    // Check if it's an audio file
+                    val name = file.name.lowercase()
+                    val isAudio = name.endsWith(".mp3") || name.endsWith(".wav") || name.endsWith(".ogg") ||
+                            name.endsWith(".flac") || name.endsWith(".aac") || name.endsWith(".m4a") ||
+                            name.endsWith(".wma") || name.endsWith(".opus") || name.endsWith(".mid") ||
+                            name.endsWith(".midi") || name.endsWith(".amr")
+                    if (!isAudio) {
+                        return jsonError("File không phải định dạng âm thanh được hỗ trợ: ${file.extension}")
+                    }
+
+                    // Stop any current playback first
+                    try {
+                        AudioPlayerManager.stop()
+                    } catch (_: Exception) {}
+
+                    // Method 1: Use our built-in AudioPlayerManager (plays in-app, no external app needed)
+                    try {
+                        AudioPlayerManager.play(ctx, path)
+                        return jsonSuccess("Đang phát: ${file.name}", mapOf(
+                            "action" to "playing", "file" to file.name, "path" to path, "method" to "audio_player_manager"
+                        ))
+                    } catch (e: Exception) {
+                        android.util.Log.w("FileServer", "AudioPlayerManager play failed", e)
+                    }
+
+                    // Method 2: Use Intent with ACTION_VIEW (opens external audio player)
+                    try {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            ctx,
+                            "${ctx.packageName}.fileprovider",
+                            file
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, getMimeType(file))
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(intent)
+                        return jsonSuccess("Đã mở file âm thanh: ${file.name}", mapOf(
+                            "action" to "playing", "file" to file.name, "path" to path, "method" to "intent_view"
+                        ))
+                    } catch (e: Exception) {
+                        android.util.Log.w("FileServer", "Intent ACTION_VIEW failed", e)
+                    }
+
+                    // Method 3: Use am start with media player
+                    try {
+                        val process = Runtime.getRuntime().exec(arrayOf(
+                            "am", "start", "-a", "android.intent.action.VIEW",
+                            "-d", "file://$path", "-t", getMimeType(file)
+                        ))
+                        process.waitFor()
+                        return jsonSuccess("Đang phát âm thanh", mapOf(
+                            "action" to "playing", "file" to file.name, "method" to "am_start"
+                        ))
+                    } catch (e: Exception) {
+                        return jsonError("Không thể phát âm thanh: ${e.message}")
+                    }
+                }
+                "stop" -> {
+                    try {
+                        AudioPlayerManager.stop()
+                        return jsonSuccess("Đã dừng phát âm thanh", mapOf("action" to "stopped"))
+                    } catch (e: Exception) {
+                        return jsonError("Không thể dừng âm thanh: ${e.message}")
+                    }
+                }
+                "volume" -> {
+                    val volume = params["volume"]?.toIntOrNull() ?: return jsonError("Cần nhập mức âm lượng (0-100)")
+                    if (volume < 0 || volume > 100) {
+                        return jsonError("Mức âm lượng phải từ 0 đến 100")
+                    }
+                    try {
+                        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                        if (am != null) {
+                            val maxVolume = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                            val targetVolume = (maxVolume * volume / 100.0).toInt()
+                            am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVolume, 0)
+                            return jsonSuccess("Âm lượng đã thay đổi: $volume%", mapOf(
+                                "action" to "volume_set", "volume" to volume, "targetStream" to targetVolume
+                            ))
+                        }
+                        return jsonError("Không thể điều chỉnh âm lượng")
+                    } catch (e: Exception) {
+                        return jsonError("Lỗi điều chỉnh âm lượng: ${e.message}")
+                    }
+                }
+                else -> return jsonError("Action không hợp lệ: $action. Hợp lệ: play, stop, volume")
+            }
+        } catch (e: Exception) {
+            return jsonError("Audio control failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Get current audio playback status.
+     */
+    private fun handleAudioStatus(): Response {
+        try {
+            val ctx = App.instance ?: return jsonError("App context not available")
+            val data = mutableMapOf<String, Any>()
+
+            data["isPlaying"] = AudioPlayerManager.isPlaying()
+            data["currentFile"] = AudioPlayerManager.getCurrentFile()
+
+            // Get volume info
+            try {
+                val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                if (am != null) {
+                    val currentVol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                    val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                    data["volume"] = if (maxVol > 0) (currentVol * 100 / maxVol) else 0
+                    data["volumeMax"] = maxVol
+                    data["volumeCurrent"] = currentVol
+                }
+            } catch (e: Exception) {
+                data["volumeError"] = e.message ?: "unknown"
+            }
+
+            return jsonSuccess("OK", data)
+        } catch (e: Exception) {
+            return jsonError("Failed to get audio status: ${e.message}")
         }
     }
 
