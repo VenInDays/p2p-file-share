@@ -2,7 +2,9 @@ package com.p2pfileshare.app.util
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.p2pfileshare.app.model.ApiResponse
+import com.p2pfileshare.app.model.AppInfo
 import com.p2pfileshare.app.model.DirectoryInfo
 import com.p2pfileshare.app.model.PeerDevice
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +94,6 @@ class ApiClient {
             conn.readTimeout = 120000
 
             DataOutputStream(conn.outputStream).use { dos ->
-                // Write file part
                 dos.writeBytes("--$boundary\r\n")
                 dos.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n")
                 dos.writeBytes("Content-Type: application/octet-stream\r\n\r\n")
@@ -208,6 +209,210 @@ class ApiClient {
             null
         }
     }
+
+    // ============ App Management ============
+
+    suspend fun listApps(peer: PeerDevice, filter: String = "all"): List<AppInfo>? = withContext(Dispatchers.IO) {
+        try {
+            val json = httpGet("http://${peer.host}:${peer.port}/api/apps?filter=${URLEncoder.encode(filter, "UTF-8")}")
+            val response = gson.fromJson(json, ApiResponse::class.java)
+            if (response.success && response.data != null) {
+                val dataJson = gson.toJson(response.data)
+                val type = object : TypeToken<List<AppInfo>>() {}.type
+                gson.fromJson(dataJson, type)
+            } else null
+        } catch (e: Exception) {
+            Log.e(tag, "listApps failed", e)
+            null
+        }
+    }
+
+    suspend fun forceStopApp(peer: PeerDevice, packageName: String): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/apps/force-stop")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+
+            val postData = "packageName=${URLEncoder.encode(packageName, "UTF-8")}"
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes(postData)
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "forceStopApp failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    suspend fun launchApp(peer: PeerDevice, packageName: String): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/apps/launch")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+
+            val postData = "packageName=${URLEncoder.encode(packageName, "UTF-8")}"
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes(postData)
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "launchApp failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    suspend fun uninstallApp(peer: PeerDevice, packageName: String): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/apps/uninstall")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+
+            val postData = "packageName=${URLEncoder.encode(packageName, "UTF-8")}"
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes(postData)
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "uninstallApp failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    suspend fun restrictAppWifi(peer: PeerDevice, packageName: String, enable: Boolean): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/apps/restrict-wifi")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+
+            val postData = "packageName=${URLEncoder.encode(packageName, "UTF-8")}&enable=$enable"
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes(postData)
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "restrictAppWifi failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    // ============ WiFi Control ============
+
+    suspend fun controlWifi(peer: PeerDevice, action: String): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/wifi-control")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+
+            val postData = "action=${URLEncoder.encode(action, "UTF-8")}"
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes(postData)
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "controlWifi failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    // ============ Play Audio ============
+
+    suspend fun playAudio(peer: PeerDevice, audioFile: File): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val boundary = "----P2PBoundary${System.currentTimeMillis()}"
+            val url = URL("http://${peer.host}:${peer.port}/api/play-audio")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.doInput = true
+            conn.useCaches = false
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 120000
+
+            DataOutputStream(conn.outputStream).use { dos ->
+                dos.writeBytes("--$boundary\r\n")
+                dos.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"${audioFile.name}\"\r\n")
+                dos.writeBytes("Content-Type: application/octet-stream\r\n\r\n")
+
+                FileInputStream(audioFile).use { fis ->
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (fis.read(buffer).also { len = it } > 0) {
+                        dos.write(buffer, 0, len)
+                    }
+                }
+                dos.writeBytes("\r\n--$boundary--\r\n")
+                dos.flush()
+            }
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "playAudio failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    suspend fun stopAudio(peer: PeerDevice): ApiResponse = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://${peer.host}:${peer.port}/api/play-audio/stop")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.doOutput = true
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val json = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            gson.fromJson(json, ApiResponse::class.java)
+        } catch (e: Exception) {
+            Log.e(tag, "stopAudio failed", e)
+            ApiResponse(false, "Lỗi kết nối: ${e.message}", null)
+        }
+    }
+
+    // ============ HTTP Helpers ============
 
     private fun httpGet(urlStr: String): String {
         val url = URL(urlStr)

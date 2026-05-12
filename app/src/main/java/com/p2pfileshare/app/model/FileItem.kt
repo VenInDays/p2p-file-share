@@ -31,3 +31,11 @@ data class DirectoryInfo(
     @SerializedName("files") val files: List<FileItem>,
     @SerializedName("parent") val parent: String?
 )
+
+data class AppInfo(
+    @SerializedName("name") val name: String,
+    @SerializedName("packageName") val packageName: String,
+    @SerializedName("isSystemApp") val isSystemApp: Boolean,
+    @SerializedName("isEnabled") val isEnabled: Boolean,
+    @SerializedName("hasLaunchIntent") val hasLaunchIntent: Boolean
+) : Serializable
